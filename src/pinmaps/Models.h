@@ -59,6 +59,10 @@
   #define PINMAP_STR "FYSETC E4"
   #include "Pins.FYSETC_E4.h"
 #endif
+#if PINMAP == RCX400_ESP
+#define PINMAP_STR "MaxESP RCX 400, ESP32"
+#include "Pins.RCX400_ESP.h"
+#endif
 #if PINMAP == FYSETC_S6
   #define PINMAP_STR "FYSETC S6"
   #include "Pins.FYSETC_S6.h"

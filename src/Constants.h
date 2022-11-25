@@ -31,8 +31,9 @@
 #define MicroScope                  17     // MicroScope PCB (ESP32, experimental and may be removed at any point!, USE AY YOUR OWN RISK!!!)
 
 #define STM32Blue                   18     // Khalid and Dave's PCB for STM32 Blue pill (STM32F103CB and STM32F303CC)
+#define RCX400_ESP               	19
 
-#define PINMAP_LAST                 18
+#define PINMAP_LAST                 19
 
 // WEATHER sensors (temperature, pressure, and humidity)
 #define WEATHER_FIRST               1
