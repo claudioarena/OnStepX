@@ -8,7 +8,6 @@
 #ifdef STEP_DIR_MOTOR_PRESENT
 
 #include "../Drivers.h"
-#include "StepDirDriver.h"
 
 typedef struct StepDirDriverPins {
   int16_t m0;
@@ -22,42 +21,49 @@ typedef struct StepDirDriverPins {
 
 typedef struct StepDirDriverSettings {
   int16_t model;
+  int8_t  status;
   int16_t microsteps;
   int16_t microstepsSlewing;
-  int16_t currentHold;
-  int16_t currentRun;
-  int16_t currentGoto;
-  int8_t  intpol;
   int8_t  decay;
   int8_t  decaySlewing;
-  int8_t  status;
 } StepDirDriverSettings;
 
 class StepDirDriver {
   public:
-    // get driver type code
-    virtual char getParameterTypeCode() { return 'X'; }
+    StepDirDriver(uint8_t axisNumber, const StepDirDriverPins *Pins, const StepDirDriverSettings *Settings);
 
-    // set up driver and parameters: microsteps, microsteps goto, hold current, run current, goto current, unused
-    virtual void init(float param1, float param2, float param3, float param4, float param5, float param6);
+    // set up driver
+    virtual bool init();
 
-    // validate driver parameters
-    virtual bool validateParameters(float param1, float param2, float param3, float param4, float param5, float param6);
+    // revert settings to defaults
+    virtual void useDefaults() { return; }
+
+    // returns the number of axis parameters
+    virtual uint8_t getParameterCount() { return 0; }
+
+    // returns the specified axis parameter
+    virtual AxisParameter* getParameter(uint8_t number) { UNUSED(number); return &invalid; }
+
+    // check if axis parameter is valid
+    virtual bool parameterIsValid(AxisParameter* parameter, bool next = false);
 
     // set microstep mode for tracking
-    virtual void modeMicrostepTracking();
+    virtual void modeMicrostepTracking() {}
 
     // set microstep mode for slewing
-    virtual int modeMicrostepSlewing();
+    virtual int modeMicrostepSlewing() { return 1; }
 
     // set decay mode for tracking
-    virtual void modeDecayTracking();
+    virtual void modeDecayTracking() {}
 
     // set decay mode for slewing
-    virtual void modeDecaySlewing();
+    virtual void modeDecaySlewing() {}
 
     // get microstep ratio for slewing
     inline int getMicrostepRatio() { return microstepRatio; }
+
+    // get microstep mode used for tracking
+    inline int getMicrostepMode() { return normalizedMicrosteps; }
 
     // update status info. for driver
     virtual void updateStatus();
@@ -66,13 +72,30 @@ class StepDirDriver {
     inline DriverStatus getStatus() { return status; }
 
     // secondary way to power down not using the enable pin
-    virtual bool enable(bool state) { UNUSED(state); return false; }
+    // default assume the driver is always enabled, i.e. no control
+    virtual bool enable(bool state) { UNUSED(state); return true; }
+
+    // sets frequency corrosponding to the fastest allowed slew rate
+    // \param frequency: rate of motion in steps per second
+    void setFrequencyMax(float frequency) { velocityMax = frequency; }
 
     // calibrate the motor driver if required
-    virtual void calibrate() {}
+    virtual void calibrateDriver() {}
+
+    // determine if this motor can detect a stall
+    virtual bool hasStallDetect() const { return false; }
+
+    // check to if the motor is stalled
+    virtual bool isStalled(float stepsPerSec) { (void)stepsPerSec; return false; }
+
+    // reset any internal stall-detect state (baseline, latch, etc.)
+    virtual void stallDetectReset() {}
 
     // get the pulse width in nanoseconds, if unknown (-1) returns 2000 nanoseconds
     long getPulseWidth();
+
+    // get the driver name
+    virtual const char* name();
 
     // true if switching microstep modes at low speed is allowed
     bool modeSwitchAllowed = false;
@@ -80,31 +103,44 @@ class StepDirDriver {
     // true if switching microstep modes at high speed is allowed
     bool modeSwitchFastAllowed = false;
 
-    StepDirDriverSettings settings;
-
   protected:
-    inline float mAToCs(float mA) { return 32.0F*(((mA/1000.0F)*(rSense+0.02F))/0.325F) - 1.0F; }
-    float rSense = 0.11F;
+    // read status from driver
+    virtual void readStatus() {}
+
+    // different models of stepper drivers have different bit settings for microsteps
+    // translate the human readable microsteps in the configuration to mode bit settings
+    // returns bit code (0 to 7) or OFF if microsteps is not supported or unknown
+    int subdivisionsToCode(long microsteps);
 
     uint8_t axisNumber;
+    char axisPrefix[32]; // prefix for debug messages
+
     DriverStatus status = {false, {false, false}, {false, false}, false, false, false, false};
     #if DEBUG != OFF
       DriverStatus lastStatus = {false, {false, false}, {false, false}, false, false, false, false};
     #endif
     unsigned long timeLastStatusUpdate = 0;
-  
-    const int16_t* microsteps;
+
+    const StepDirDriverPins *Pins;
+
+    int16_t driverModel = 0;
+    int16_t statusMode;
+    int16_t normalizedMicrosteps;
+    int16_t normalizedMicrostepsSlewing;
+    int16_t normalizedDecay;
+    int16_t normalizedDecaySlewing;
     int16_t microstepRatio = 1;
     int16_t microstepCode = OFF;
     int16_t microstepCodeSlewing = OFF;
 
-    const StepDirDriverPins *Pins;
+    float velocityMax = 1.0F; // frequency corrosponding to the fastest allowed slew rate, in microsteps/s
 
-  private:
-    // different models of stepper drivers have different bit settings for microsteps
-    // translate the human readable microsteps in the configuration to mode bit settings
-    // returns bit code (0 to 7) or OFF if microsteps is not supported or unknown
-    int subdivisionsToCode(long microsteps);
+    // runtime adjustable settings
+    AxisParameter invalid           = {NAN, NAN, NAN, NAN, NAN, AXP_INVALID, ""};
+    AxisParameter microsteps        = {NAN, NAN, NAN, 1, 256, AXP_POW2, AXPN_MICROSTEPS};
+    AxisParameter microstepsSlewing = {NAN, NAN, NAN, 1, 256, AXP_POW2, AXPN_MICROSTEPS_GOTO};
+    AxisParameter decay             = {NAN, NAN, NAN, DRIVER_DECAY_MODE_FIRST, DRIVER_DECAY_MODE_LAST, AXP_DECAY, AXPN_DECAY_MODE};
+    AxisParameter decaySlewing      = {NAN, NAN, NAN, DRIVER_DECAY_MODE_FIRST, DRIVER_DECAY_MODE_LAST, AXP_DECAY, AXPN_DECAY_MODE_GOTO};
 };
 
 #endif

@@ -13,26 +13,36 @@
 #define FYSETC_S6_1                 3      // FYSETC S6 Version 1.2
 #define FYSETC_S6_2                 4      // FYSETC S6 Version 2.0, 3D printer board, a 6-axis design
 
-#define MiniPCB                     5      // small 2-axis design for embedded or mounting behind a panel, Teensy3.2
-#define MiniPCB13                   6      // improved version 1.3 adds better support for ESP-01 flashing and optional I2C
+#define BTT_SKR_PRO                 5      // BigTreeTech SKR PRO Version 1.2
+#define BTT_OCTOPUS_PRO             6      // BigTreeTech Octopus Pro Version 1.1
 
-#define MiniPCB2                    7      // 2-axis design for small alum. case, Teensy3.2
+#define MiniPCB                     7      // small 2-axis design for embedded or mounting behind a panel, Teensy3.2
+#define MiniPCB13                   8      // improved version 1.3 adds better support for ESP-01 flashing and optional I2C
 
-#define MaxPCB                      8      // first generation custom 4-axis board, Teensy3.5/Teensy3.6
-#define MaxPCB2                     9      // improved second generation for alum. case, Teensy3.5/Teensy3.6
-#define MaxPCB3                     10     // improved third generation for alum. case, Teensy4.1
-#define MaxPCB4                     11     // for Teensy4.1 w/TMC2209 support
-#define MaxSTM3                     12     // update to the MaxPCB3 using an Blackpill F411CE instead of the Teensy3.5/3.6
-#define MaxSTM3I                    13     // as above but using an onboard STM32F411CE with M24C64 EEPROM as default
+#define MiniPCB2                    9      // 2-axis design for small alum. case, Teensy3.2
 
-#define MaxESP3                     14     // adds 4th axis and option to flash the WeMos D1 Mini WiFi through OnStep
-#define MaxESP4                     15     // for ESP32S w/TMC2209 support
-#define CNC3                        16     // Arduino CNC Sheild on WeMos D1 R32 (ESP32)
-#define MicroScope                  17     // MicroScope PCB (ESP32, experimental and may be removed at any point!, USE AY YOUR OWN RISK!!!)
+#define MaxPCB                      10     // first generation custom 4-axis board, Teensy3.5/Teensy3.6
+#define MaxPCB2                     11     // second generation adds alum. case, Teensy3.5/Teensy3.6
+#define MaxPCB3                     12     // third generation adds SPI four axis support, Teensy4.1
+#define MaxPCB4                     13     // forth generation with SPI/TMC2209 support, Teensy4.1
+#define RESERVED                    14     // RESERVED
 
-#define STM32Blue                   18     // Khalid and Dave's PCB for STM32 Blue pill (STM32F103CB and STM32F303CC)
+#define MaxSTM3                     15     // update to the MaxPCB3 using an Blackpill F411CE instead of the Teensy3.5/3.6
+#define MaxSTM3I                    16     // as above but using an onboard STM32F411CE with M24C64 EEPROM as default
 
-#define PINMAP_LAST                 18
+#define MaxESP3                     17     // adds 4th axis and option to flash the WeMos D1 Mini WiFi through OnStep
+#define MaxESP4                     18     // for ESP32S w/TMC2209 support
+#define CNC3                        19     // Arduino CNC Sheild on WeMos D1 R32 (ESP32)
+#define MicroScope                  20     // MicroScope PCB (ESP32, experimental and may be removed at any point!, USE AY YOUR OWN RISK!!!)
+
+#define STM32Blue                   21     // Khalid and Dave's PCB for STM32 Blue pill (STM32F103CB and STM32F303CC)
+
+#define JTWSTM                      22     // JTW Astronomy JTWSTM telescope mount controller Rev 2.1
+#define MANTICORE                   23     // JTW Astronomy MANTICORE telescope mount controller Rev 1.0
+
+#define SAL_XB1                     24     // SAL-XB1 telescope mount controller
+
+#define PINMAP_LAST                 24
 
 // WEATHER sensors (temperature, pressure, and humidity)
 #define WEATHER_FIRST               1
@@ -54,15 +64,18 @@
 
 // MOUNT TYPE
 #define MOUNT_TYPE_FIRST            1
+#define MOUNT_SUBTYPE_FIRST         1
 #define GEM                         1      // German Equatorial Mount, meridian flips enabled
 #define FORK                        2      // Fork Mount, meridian flips disabled
 #define ALTAZM                      3      // Altitude Azimuth Mounts, Dobsonians, etc.
-#define GEM_TA                      4      // GEM, w/tangent arm Declination
-#define GEM_TAC                     5      // GEM, w/tangent arm Declination and geometry correction
-#define FORK_TA                     6      // FORK, w/tangent arm Declination
-#define FORK_TAC                    7      // FORK, w/tangent arm Declination and geometry correction
-#define ALTAZM_UNL                  8      // ALTAZM, w/unlimited Azmiuth motion
-#define MOUNT_TYPE_LAST             8
+#define ALTALT                      4      // Altitude Altitude Mounts
+#define MOUNT_SUBTYPE_LAST          4
+#define GEM_TA                      5      // GEM, w/tangent arm Declination
+#define GEM_TAC                     6      // GEM, w/tangent arm Declination and geometry correction
+#define FORK_TA                     7      // FORK, w/tangent arm Declination
+#define FORK_TAC                    8      // FORK, w/tangent arm Declination and geometry correction
+#define ALTAZM_UNL                  9      // ALTAZM, w/unlimited Azmiuth motion
+#define MOUNT_TYPE_LAST             9
 
 // MOUNT COORDS
 #define MOUNT_COORDS_FIRST          1
@@ -72,20 +85,28 @@
 #define ASTROMETRIC_J2000           4
 #define MOUNT_COORDS_LAST           4
 
+// STARTUP AUTHORITY MODE
+#define SA_STRICT                   1
+#define SA_AUTO                     2
+#define SA_PERMISSIVE               3
+
 // TIME LOCATION SOURCE devices supported
 #define TLS_FIRST                   1
 #define DS3231                      1      // DS3231 RTC on I2C
 #define DS3234                      2      // DS3234 RTC on SPI (DS3234_CS_PIN) Makuna library
-#define TEENSY                      3      // TEENSY3.2 RTC (Built-in)
-#define GPS                         4      // GPS device
-#define TLS_LAST                    4
+#define SD3031                      3      // SD3031 RTC on I2C
+#define TEENSY                      4      // TEENSY3.2 RTC (Built-in)
+#define GPS                         5      // GPS device
+#define NTP                         6      // NTP
+#define TLS_LAST                    6
 
 // PIER SIDE
 #define PIER_SIDE_FIRST             1
 #define EAST                        1      // same as PSS_EAST
 #define WEST                        2      // same as PSS_WEST
 #define BEST                        3      // same as PSS_BEST
-#define PIER_SIDE_LAST              3
+#define AUTOMATIC                   4      // same as PSS_AUTO
+#define PIER_SIDE_LAST              4
 
 // COMPENSATED TRACKING
 #define COMPENSATED_TRACKING_FIRST  1
@@ -115,29 +136,19 @@
 #define INTERVALOMETER              4      // control an camera shutter
 #define MOMENTARY_SWITCH            5      // control an simple momentary on/off switch
 #define HIDDEN_SWITCH               6      // control an hidden on/off switch (for controlling a pin state at boot)
-#define AUX_FEATURE_PURPOSE_LAST    6
-
-// GPIO devices (pin# 512 up to 543)
-// these can work for most digital I/O EXCEPT: STEP/DIR, 1-WIRE/I2C/SPI (CS is ok), the ST4 port, and the PPS pin
-#define GPIO_FIRST                  1
-#define DS2413                      1      // DS2413 2-channel GPIO
-#define MCP23008                    2      // MCP23008 8-channel GPIO
-#define MCP23017                    3      // MCP23017 16-channel GPIO
-#define X9555                       4      // TCA/PCA9555 16-channel GPIO
-#define X8575                       5      // PCF8575 16-channel GPIO
-#define SWS                         6      // Smart Web Server 8-channel GPIO (usually on the four Encoder pins, if otherwise unused)
-#define SSR74HC595                  7      // 74HC595 8,16,24,32-channel GPIO (serial shift register, output only)
-#define GPIO_LAST                   7
+#define COVER_SWITCH                7      // control an servo driven OTA cover where "on" is closed and "off" is open
+#define AUX_FEATURE_PURPOSE_LAST    7
 
 // --------------------------------------------------------------------------------------------------------------------------
 
-// a short string describing this product
-#define PROD_ABV                    "OnStepX"
-
 // task manager
-#define TASKS_MAX                   48     // up to 48 tasks
+#define TASKS_MAX                   60     // up to 60 tasks
 #define TASKS_SKIP_MISSED                  // just skip missed tasks if too late
-#define TASKS_HWTIMERS              3      // up to 4 hardware timers
+#ifdef ESP32
+  #define TASKS_HWTIMERS            4      // up to 4 hardware timers
+#else
+  #define TASKS_HWTIMERS            3
+#endif
 
 // default start of axis class hardware timers
 #define AXIS_HARDWARE_TIMER_BASE    2      // in the OnStepX timer#1 is the sidereal clock
@@ -147,27 +158,6 @@
 #define SERIAL_ST4_SERVER_PRESENT
 
 // NV -------------------------------------------------------------------------------------------------------------------
-#define INIT_NV_KEY                 583928929UL
 
-#define NV_KEY                      0      // bytes: 4   , 4
-#define NV_SITE_NUMBER              4      // bytes: 1   , 1
-#define NV_SITE_BASE                5      // bytes: 40*4, 160
-#define NV_SITE_JD_BASE             165    // bytes: 16  , 16
-
-#define NV_MOUNT_SETTINGS_BASE      181    // bytes: 9   , 9
-#define NV_MOUNT_TYPE_BASE          190    // bytes: 1   , 1
-#define NV_MOUNT_GOTO_BASE          191    // bytes: 6   , 6
-#define NV_MOUNT_GUIDE_BASE         197    // bytes: 3   , 3
-#define NV_MOUNT_LIMITS_BASE        200    // bytes: 16  , 16
-#define NV_MOUNT_PARK_BASE          216    // bytes: 15  , 15
-#define NV_MOUNT_PEC_BASE           231    // bytes: 6   , 6
-#define NV_MOUNT_STATUS_BASE        237    // bytes: 1   , 1
-
-#define NV_ALIGN_MODEL_BASE         238    // bytes: 32  , 32
-#define NV_AXIS_SETTINGS_REVERT     270    // bytes: 2   , 2
-#define NV_AXIS_SETTINGS_BASE       272    // bytes: 45*9, 405
-#define NV_FOCUSER_SETTINGS_BASE    677    // bytes: 18*6, 108
-#define NV_ROTATOR_SETTINGS_BASE    785    // bytes: 7   , 7
-#define NV_FEATURE_SETTINGS_BASE    792    // bytes: 3 *8, 24
-#define NV_TELESCOPE_SETTINGS_BASE  816    // bytes: 2   , 2
-#define NV_PEC_BUFFER_BASE          818    // Bytes: ?   , ? + (PEC_BUFFER_SIZE_LIMIT - 1)
+// unique volume signature for this volume/partition layout
+#define NV_VOLUME_SIGNATURE         0x0001u

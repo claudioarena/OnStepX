@@ -7,8 +7,9 @@
     bool debugRemoteConnected = false;
     void debugPrint(const char* s) {
       char s1[255];
-      strcpy(s1, s);
-      for (unsigned int i = 0; i < strlen(s1); i++) if (s1[i] == ' ') s1[i] = '_';
+      sstrcpy(s1, s);
+      int length = strlen(s1);
+      for (unsigned int i = 0; i < length; i++) if (s1[i] == ' ') s1[i] = '_';
       SERIAL_ONSTEP.print(s1);
     }
   #endif
@@ -20,10 +21,12 @@
     #define PROFILER_VT100 ON
     
     char scale_unit(double *d) {
-      if (labs(lround(*d)) > 999) { *d /= 1000.0; return 'm'; } else
-        if (labs(lround(*d)) > 999) { *d /= 1000.0; return ' '; } else return 'u';
+      long v = labs(lround(*d));
+      if (v > 999999) { *d /= 1000000.0; return 's'; }   // s
+      if (v > 999)    { *d /= 1000.0;    return 'm'; }   // ms
+      return 'u';                                        // us
     }
-    
+
     void profiler() {
       char s[120];
       char aau = 'u'; char axu = 'u'; char rtu = 'u'; char rau = 'u'; char rxu = 'u';
@@ -33,16 +36,20 @@
       static int handle = tasks.getFirstHandle();
       if (!handle) {
         AAA /= count; AXA /= count; RAA /= count; RXA /= count;
-        aau = scale_unit(&AAA); axu = scale_unit(&AXA); rtu = scale_unit(&RTT); rau = scale_unit(&RAA); rxu = scale_unit(&RXA);
+        aau = scale_unit(&AAA);
+        axu = scale_unit(&AXA);
+        rtu = scale_unit(&RTT);
+        rau = scale_unit(&RAA);
+        rxu = scale_unit(&RXA);
     
-        sprintf(s, "                     ----------- ------------        ----------   --------   ----------");
+        snprintf(s, sizeof(s), "                     ----------- ------------        ----------   --------   ----------");
         SERIAL_DEBUG.print(s); Y;
         SERIAL_DEBUG.println(); Y;
         SERIAL_DEBUG.print("\x1b[K");
     
-        sprintf(s, "                    avgd %5ld%cs  avgd %4ld%cs    totaled %4ld%cs avgd %4ld%cs avgd %4ld%cs", 
+        snprintf(s, sizeof(s), "                    avgd %5ld%cs  avgd %4ld%cs   totalled %4ld%cs avgd %4ld%cs avgd %4ld%cs", 
         lround(AAA), aau, lround(AXA), axu, lround(RTT), rtu, lround(RAA), rau, lround(RXA), rxu); Y;
-      
+
         SERIAL_DEBUG.print(s); Y;
         SERIAL_DEBUG.println(); Y;
         SERIAL_DEBUG.print("\x1b[K");
@@ -56,27 +63,46 @@
         #endif
         SERIAL_DEBUG.println(); Y;
         SERIAL_DEBUG.print("\x1b[K");
-        sprintf(s, "Profiler %2d.%02d%s                                                           Task Profiler", 1, 0, "b");
+        snprintf(s, sizeof(s), "Profiler %2d.%02d%s                                                           Task Profiler", 1, 0, "b");
         SERIAL_DEBUG.println(s); Y;
         SERIAL_DEBUG.print("\x1b[K");
         SERIAL_DEBUG.println();
         SERIAL_DEBUG.print("\x1b[K");
+
+        AAA = 0; AXA = 0; RTT = 0; RAA = 0; RXA = 0;
       }
     
       char *name = tasks.getNameStr(handle);
       
       if (!strstr(name, "Profilr")) {
+        char priority = tasks.getPriority(handle) + '0';
+
         double AA = tasks.getArrivalAvg(handle); Y;
+        AAA += AA;
+        aau = scale_unit(&AA);
+
         double AX = tasks.getArrivalMax(handle); Y;
+        AXA += AX;
+        axu = scale_unit(&AX);
+
         double RT = tasks.getRuntimeTotal(handle); Y;
+        RTT += RT;
+        rtu = scale_unit(&RT);
+
         double RTcount = tasks.getRuntimeTotalCount(handle); Y;
-        double RA; if (RTcount == 0) RA = 0; else RA = RT/RTcount; 
+        double RA;
+        if (RTcount == 0) RA = 0; else RA = RT/RTcount; 
+        RAA += RA;
+        rau = scale_unit(&RA);
+
         double RX = tasks.getRuntimeMax(handle); Y;
-        count++; AAA += AA; AXA += AX; RTT += RT; RAA += RA; RXA += RX;
-        aau = scale_unit(&AA); axu = scale_unit(&AX); rtu = scale_unit(&RT); rau = scale_unit(&RA); rxu = scale_unit(&RX);
+        RXA += RX;
+        rxu = scale_unit(&RX);
+
+        count++;
         
-        sprintf(s, "[%-10s] arrives avg %5ld%cs, max ±%4ld%cs; run total %4ld%cs, avg %4ld%cs, max %4ld%cs", 
-        name, lround(AA), aau, lround(AX), axu, lround(RT), rtu, lround(RA), rau, lround(RX), rxu); Y;
+        snprintf(s, sizeof(s), "[%-9sP%c] arrive avg %5ld%cs, max ±%4ld%cs; run total %4ld%cs, avg %4ld%cs, max %4ld%cs", 
+        name, priority, lround(AA), aau, lround(AX), axu, lround(RT), rtu, lround(RA), rau, lround(RX), rxu); Y;
       
         SERIAL_DEBUG.print(s); Y;
         SERIAL_DEBUG.println();

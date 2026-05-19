@@ -5,24 +5,52 @@
 
 #ifdef MOTOR_PRESENT
 
-// get motor default parameters
-void Motor::getDefaultParameters(float *param1, float *param2, float *param3, float *param4, float *param5, float *param6){
-  *param1 = default_param1;
-  *param2 = default_param2;
-  *param3 = default_param3;
-  *param4 = default_param4;
-  *param5 = default_param5;
-  *param6 = default_param6;
+Motor::Motor(uint8_t axisNumber, int8_t reverse) {
+  this->axisNumber = axisNumber;
+  this->reverse.valueDefault = reverse == ON;
 }
 
-// set motor default parameters
-void Motor::setDefaultParameters(float param1, float param2, float param3, float param4, float param5, float param6){
-  default_param1 = param1;
-  default_param2 = param2;
-  default_param3 = param3;
-  default_param4 = param4;
-  default_param5 = param5;
-  default_param6 = param6;
+bool Motor::init() {
+  VF("MSG:"); V(axisPrefix); VLF("motor init");
+  normalizedReverse = (bool)lround(reverse.value);
+  return true;
+}
+
+// returns the specified axis parameter by name
+AxisParameter* Motor::getParameterByName(const char* name) {
+  for (int i = 1; i <= getParameterCount(); i++) {
+    if (strcmp(getParameter(i)->name, name) == 0) { return getParameter(i); }
+  }
+  return &invalid;
+}
+
+// check if parameter is valid
+bool Motor::parameterIsValid(AxisParameter* parameter, bool next) {
+  const float value = next ? parameter->valueNv : parameter->value;
+
+  if (isnan(value) || isinf(value)) return false;
+
+  // reject nonsense bounds
+  const float pmin = parameter->min;
+  const float pmax = parameter->max;
+  if (isnan(pmin) || isnan(pmax) || isinf(pmin) || isinf(pmax) || (pmax < pmin)) return false;
+
+  if (value < pmin) return false;
+  if (value > pmax) return false;
+
+  if (parameter->type == AXP_POW2) {
+    static constexpr float kIntEps = 1E-3F;
+
+    // Value must be effectively integral
+    const float vf = value;
+    const int32_t vi = (int32_t)lroundf(vf);
+    if (fabsf(vf - (float)vi) > kIntEps) return false;
+
+    if (vi < 1 || vi > 256) return false;
+    if ((vi & (vi - 1)) != 0) return false; // power of two check
+  }
+
+  return true;
 }
 
 // resets motor and target angular position in steps, also zeros backlash and index 
@@ -52,36 +80,33 @@ long Motor::getMotorPositionSteps() {
 
 // get instrument coordinate, in steps
 long Motor::getInstrumentCoordinateSteps() {
-  noInterrupts();
-  long steps = motorSteps + indexSteps;
-  interrupts();
-  return steps;
+  long steps = ATOMIC_LOAD(motorSteps);
+  return steps + indexSteps;
 }
 
 // set instrument coordinate, in steps
 void Motor::setInstrumentCoordinateSteps(long value) {
-  noInterrupts();
-  indexSteps = value - motorSteps;
-  interrupts();
+  indexSteps = value - ATOMIC_LOAD(motorSteps);
 }
 
 // set instrument park coordinate, in steps
 // should only be called when the axis is not moving
+// nudge index so park lands on a stable cogging grid (multiple of 4*modulo steps)
 void Motor::setInstrumentCoordinateParkSteps(long value, int modulo) {
+  long priorLocationOffset = value - ATOMIC_LOAD(motorSteps);
   if (driverType == STEP_DIR) {
-    long steps = value - motorSteps;
+    if (modulo == OFF) modulo = 1;
+    long steps = priorLocationOffset;
     steps -= modulo*2L;
     for (int l = 0; l < modulo*4; l++) { if (steps % (modulo*4L) == 0) break; steps++; }
     indexSteps = steps;
   } else setInstrumentCoordinateSteps(value);
-  V(axisPrefix); VF("setInstrumentCoordinateParkSteps at "); V(indexSteps); VF(" (was "); V(value - motorSteps); VL(")");
+  VF("MSG:"); V(axisPrefix); VF("setInstrumentCoordinateParkSteps at "); V(indexSteps); VF(" (was "); V(priorLocationOffset); VL(")");
 }
 
 // get target coordinate (with index), in steps
 long Motor::getTargetCoordinateSteps() {
-  noInterrupts();
-  long steps = targetSteps + indexSteps;
-  interrupts();
+  long steps = ATOMIC_LOAD(targetSteps) + indexSteps;
   return steps;
 }
 
@@ -96,6 +121,7 @@ void Motor::setTargetCoordinateSteps(long value) {
 // should only be called when the axis is not moving
 void Motor::setTargetCoordinateParkSteps(long value, int modulo) {
   if (driverType == STEP_DIR) {
+    if (modulo == OFF) modulo = 1;
     long steps = value - indexSteps;
     steps -= modulo*2L;
     for (int l = 0; l < modulo*4; l++) { if (steps % (modulo*4L) == 0) break; steps++; }
@@ -103,22 +129,20 @@ void Motor::setTargetCoordinateParkSteps(long value, int modulo) {
     targetSteps = steps;
     interrupts();
   } else setTargetCoordinateSteps(value);
-  V(axisPrefix); VF("setTargetCoordinateParkSteps at "); V(targetSteps); VF(" (was "); V(value - indexSteps); VL(")");
+  VF("MSG:"); V(axisPrefix); VF("setTargetCoordinateParkSteps at "); V(targetSteps); VF(" (was "); V(value - indexSteps); VL(")");
 }
 
 // get backlash amount in steps
 long Motor::getBacklashSteps() {
-  noInterrupts();
-  uint16_t backlash = backlashAmountSteps;
-  interrupts();
-  return backlash;
+  uint16_t backlash = ATOMIC_LOAD(backlashAmountSteps);
+  return (long)backlash;
 }
 
 // set backlash amount in steps
 void Motor::setBacklashSteps(long value) {
-  noInterrupts();
-  backlashAmountSteps = value;
-  interrupts();
+  if (value < 0) value = 0;
+  if (value > 65535) value = 65535;
+  ATOMIC_STORE(backlashAmountSteps, (uint16_t)value);
 }
 
 // mark origin coordinate for autoGoto as current location
@@ -138,9 +162,7 @@ long Motor::getTargetDistanceSteps() {
 
 // distance to origin or target, whichever is closer, in steps
 long Motor::getOriginOrTargetDistanceSteps() {
-  noInterrupts();
-  long steps = motorSteps;
-  interrupts();
+  long steps = ATOMIC_LOAD(motorSteps);
   long distanceOrigin = labs(originSteps - steps);
   long distanceTarget = labs(targetSteps - steps);
   if (distanceOrigin < distanceTarget) return distanceOrigin; else return distanceTarget;
@@ -148,9 +170,7 @@ long Motor::getOriginOrTargetDistanceSteps() {
 
 // returns 1 if distance to origin is closer else -1 if target is closer
 int Motor::getRampDirection() {
-  noInterrupts();
-  long steps = motorSteps;
-  interrupts();
+  long steps = ATOMIC_LOAD(motorSteps);
   long distanceOrigin = labs(originSteps - steps);
   long distanceTarget = labs(targetSteps - steps);
   if (distanceOrigin < distanceTarget) return 1; else return -1;

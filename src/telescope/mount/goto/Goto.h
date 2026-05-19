@@ -11,9 +11,9 @@
 
 enum MeridianFlip: uint8_t     {MF_NEVER, MF_ALWAYS};
 enum GotoState: uint8_t        {GS_NONE, GS_GOTO};
-enum GotoStage: uint8_t        {GG_NONE, GG_ABORT, GG_READY_ABORT, GG_WAYPOINT_HOME, GG_WAYPOINT_AVOID, GG_NEAR_DESTINATION, GG_DESTINATION};
+enum GotoStage: uint8_t        {GG_NONE, GG_ABORT, GG_READY_ABORT, GG_WAYPOINT_HOME, GG_WAYPOINT_AVOID, GG_NEAR_DESTINATION_START, GG_NEAR_DESTINATION_WAIT, GG_NEAR_DESTINATION, GG_DESTINATION};
 enum GotoType: uint8_t         {GT_NONE, GT_HOME, GT_PARK};
-enum PierSideSelect: uint8_t   {PSS_NONE, PSS_EAST, PSS_WEST, PSS_BEST, PSS_EAST_ONLY, PSS_WEST_ONLY, PSS_SAME_ONLY};
+enum PierSideSelect: uint8_t   {PSS_NONE, PSS_EAST, PSS_WEST, PSS_BEST, PSS_AUTO, PSS_EAST_ONLY, PSS_WEST_ONLY, PSS_SAME_ONLY};
 
 typedef struct MeridianFlipHome {
   bool paused;
@@ -39,7 +39,7 @@ class Goto {
   public:
     void init();
 
-    bool command(char *reply, char *command, char *parameter, bool *supressFrame, bool *numericReply, CommandError *commandError);
+    bool command(char *reply, char *command, char *parameter, bool *suppressFrame, bool *numericReply, CommandError *commandError);
 
     // goto to equatorial target position (Native coordinate system) using the defaut preferredPierSide
     CommandError request();
@@ -62,14 +62,14 @@ class Goto {
     // checks for valid target and determines pier side (Mount coordinate system)
     CommandError setTarget(Coordinate *coords, PierSideSelect pierSideSelect, bool isGoto = true);
 
-    // stop any presently active goto
-    void stop();
+    // abort any presently active goto
+    void abort();
 
     // general status checks ahead of sync or goto
     CommandError validate();
 
     // add an align star (at the current position relative to target)
-    CommandError alignAddStar();
+    CommandError alignAddStar(bool sync = false);
 
     // reset the alignment model
     void alignReset();
@@ -90,15 +90,27 @@ class Goto {
     inline void homeContinue() { meridianFlipHome.resume = true; }
 
     // returns true if the automatic meridian flip feature is enabled
-    inline bool isAutoFlipEnabled() { return settings.meridianFlipAuto; }
+    inline bool isAutoFlipEnabled() { return settings.meridianFlipAuto && transform.isEquatorial() && transform.meridianFlips; }
+
+    // return selected slew rate
+    inline float getRadsPerSecond() { return radsPerSecondCurrent; }
 
     // monitor goto
     void poll();
 
+    // for determining goto state
     GotoState state = GS_NONE;
+    GotoStage stage = GG_NONE;
 
     // current goto rate in radians per second
     float rate;
+
+    // flag to start tracking if this is the first goto
+    bool firstGoto = true;
+
+    // flag to indicate that encoders are present
+    bool absoluteEncodersPresent = false;
+    bool encodersPresent = false;
 
   private:
 
@@ -106,7 +118,7 @@ class Goto {
     // set any additional destinations required for a goto
     void waypoint(Coordinate *current);
 
-    // start slews with approach correction and parking support
+    // start slews with approach correction and parking/homing support
     CommandError startAutoSlew();
     #endif
 
@@ -116,16 +128,27 @@ class Goto {
     // estimate average microseconds per step lower limit
     float usPerStepLowerLimit();
 
-    Coordinate gotoTarget;                     // initial requested goto destination Native coordinate (eq or hor)
-    Coordinate start;                          // goto starts from this Mount coordinate (eq or hor)
-    Coordinate destination;                    // goto next destination Mount coordinate (eq or hor)
-    Coordinate target;                         // goto final destination Mount coordinate (eq or hor)
-    GotoStage  stage                = GG_NONE;
+    // get least distance between coordinates
+    inline double dist(double a, double b) { if (a > b) return a - b; else return b - a; }
+
+    // requested goto/sync destination Native coordinate (eq or hor)
+    Coordinate gotoTarget = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, PIER_SIDE_NONE};
+    // goto starts from this Mount coordinate (eq or hor)
+    Coordinate start;
+    // goto next destination Mount coordinate (eq or hor)
+    Coordinate destination;
+    // goto final destination Mount coordinate (eq or hor)
+    Coordinate target = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, PIER_SIDE_NONE};
+    // last align (goto) target Mount coordinate (eq or hor)
+    Coordinate lastAlignTarget = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, PIER_SIDE_NONE};
     GotoState  stateAbort           = GS_NONE;
     GotoState  stateLast            = GS_NONE;
     uint8_t    taskHandle           = 0;
     int        nearDestinationRefineStages;
     unsigned long nearTargetTimeout = 0;
+    unsigned long nearTargetTimeoutAxis1 = 0;
+    unsigned long nearTargetTimeoutAxis2 = 0;
+    unsigned long nearDestinationTimeout = 0;
 
     MeridianFlipHome meridianFlipHome = {false, false};
 
@@ -138,6 +161,8 @@ class Goto {
     double slewDestinationDistDec = 0.0;
 
     GotoSettings settings = {MFLIP_AUTOMATIC_DEFAULT == ON, MFLIP_PAUSE_HOME_DEFAULT == ON, (PierSideSelect)PIER_SIDE_PREFERRED_DEFAULT, 1000001.0F};
+
+    uint32_t nvKey;
 };
 
 extern Goto goTo;

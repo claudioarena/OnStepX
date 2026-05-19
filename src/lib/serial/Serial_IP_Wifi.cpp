@@ -13,18 +13,21 @@
     if ((port < 9000 || port >= 10000 || port == 9600) && clientTimeoutMs == 2000 && persist == false) port = 9999;
 
     this->port = port;
+    this->clientTimeoutMs = clientTimeoutMs;
+    this->persist = persist;
 
-    wifiManager.init();
+    if (!wifiManager.init()) {
+      DLF("WRN: IPSerial, failed to start WiFi");
+      return;
+    }
 
     cmdSvr = new WiFiServer(port);
     delay(1000);
 
     cmdSvr->begin();
     cmdSvr->setNoDelay(true);
-    VF("MSG: WiFi, started IP commandServer on port "); VL(port);
+    VF("MSG: IPSerial, started WiFiServer on port "); VL(port);
 
-    this->clientTimeoutMs = clientTimeoutMs;
-    this->persist = persist;
     active = true;
 
     delay(1000);
@@ -39,17 +42,24 @@
     }
   }
 
+  void IPSerial::flush(void) {
+    if (!active || !cmdSvrClient) return;
+    cmdSvrClient.flush();
+  }
+
   int IPSerial::available(void) {
     if (!active) return 0;
 
     if (!cmdSvrClient) {
       if (cmdSvr->hasClient()) {
-        #if DEBUG_CMDSERVER == ON
-          VLF("MSG: available(), NEW cmdSvrClient");
-        #endif
         cmdSvrClient = cmdSvr->available();
         clientEndTimeMs = millis() + clientTimeoutMs;
       }
+      if (cmdSvrClient) {
+        #if DEBUG_CMDSERVER == ON
+          VLF("MSG: available(), NEW cmdSvrClient");
+        #endif
+      } else return 0;
     } else {
       if (!cmdSvrClient.connected()) { 
         #if DEBUG_CMDSERVER == ON
@@ -79,11 +89,6 @@
   int IPSerial::peek(void) {
     if (!active || !cmdSvrClient) return -1;
     return cmdSvrClient.peek();
-  }
-
-  void IPSerial::flush(void) {
-    if (!active || !cmdSvrClient) return;
-    cmdSvrClient.flush();
   }
 
   int IPSerial::read(void) {

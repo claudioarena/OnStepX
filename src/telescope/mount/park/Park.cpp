@@ -6,6 +6,7 @@
 #if defined(MOUNT_PRESENT)
 
 #include "../../../lib/tasks/OnTask.h"
+#include "../../../lib/nv/Nv.h"
 
 #include "../../Telescope.h"
 #include "../Mount.h"
@@ -18,29 +19,18 @@
 void parkSignalWrapper() { park.signal(); }
 
 void Park::init() {
-  // confirm the data structure size
-  if (ParkSettingsSize < sizeof(ParkSettings)) { nv.initError = true; DL("ERR: Park::Init(), ParkSettingsSize error"); }
-
-  // write the default settings to NV
-  if (!nv.hasValidKey()) {
-    VLF("MSG: Mount, park writing defaults to NV");
-    nv.writeBytes(NV_MOUNT_PARK_BASE, &settings, sizeof(ParkSettings));
-    // set the initial park position at home
-    state = settings.state;
-    set();
-  }
-
-  // read the settings
-  nv.readBytes(NV_MOUNT_PARK_BASE, &settings, sizeof(ParkSettings));
+  nvKey = nv().kv().computeKey("PARK_SETTINGS");
+  if (!nv().kv().getOrInit(nvKey, settings)) { DLF("WRN: Nv, init failed for PARK_SETTINGS"); }
   state = settings.state;
+  if (!settings.saved) set(true);
 
   // configure any associated sense/signal pins
-  #if PARK_SENSE != OFF && PARK_SENSE_PIN != OFF
+  #if (PARK_SENSE) != OFF && (PARK_SENSE_PIN) != OFF
     VLF("MSG: Mount, park adding sense");
     parkSenseHandle = sense.add(PARK_SENSE_PIN, PARK_SENSE_INIT, PARK_SENSE);
   #endif
 
-  #if PARK_SIGNAL != OFF && PARK_SIGNAL_PIN != OFF
+  #if (PARK_SIGNAL) != OFF && (PARK_SIGNAL_PIN) != OFF
     VLF("MSG: Mount, park adding signal");
     parkSignalHandle = sense.add(PARK_SIGNAL_PIN, PARK_SIGNAL_INIT, PARK_SIGNAL);
     
@@ -50,12 +40,16 @@ void Park::init() {
 }
 
 // sets the park position
-CommandError Park::set() {
+CommandError Park::set(bool ignoreTrust) {
   if (state == PS_PARK_FAILED) return CE_PARK_FAILED;
   if (state == PS_PARKED)      return CE_PARKED;
   if (goTo.state != GS_NONE)   return CE_SLEW_IN_MOTION;
   if (guide.state != GU_NONE)  return CE_SLEW_IN_MOTION;
-  if (mount.isFault())         return CE_SLEW_ERR_HARDWARE_FAULT;
+  if (mount.motorFault())      return CE_SLEW_ERR_HARDWARE_FAULT;
+  if (!ignoreTrust && !mount.startupAuthorityTrusted()) {
+    DLF("WRN: Mount, set park rejected because startup authority is not trusted");
+    return CE_SLEW_ERR_UNSPECIFIED;
+  }
 
   VLF("MSG: Mount, setting park position");
 
@@ -76,7 +70,7 @@ CommandError Park::set() {
     } else settings.position.pierSide = PIER_SIDE_EAST;
   }
   settings.saved = true;
-  nv.updateBytes(NV_MOUNT_PARK_BASE, &settings, sizeof(ParkSettings));
+  nv().kv().put(nvKey, settings);
 
   #if ALIGN_MAX_NUM_STARS > 1
     transform.align.modelWrite();
@@ -94,10 +88,14 @@ CommandError Park::request() {
     if (state == PS_PARKED)      return CE_NONE;
     if (state == PS_PARKING)     return CE_PARK_FAILED;
     if (state == PS_PARK_FAILED) return CE_PARK_FAILED;
+    if (!mount.startupAuthorityTrusted()) {
+      DLF("WRN: Mount, park rejected because startup authority is not trusted");
+      return CE_SLEW_ERR_UNSPECIFIED;
+    }
     if (!mount.isEnabled())      return CE_SLEW_ERR_IN_STANDBY;
-    if (mount.isFault())         return CE_SLEW_ERR_HARDWARE_FAULT;
     if (goTo.state != GS_NONE)   return CE_SLEW_IN_MOTION;
     if (guide.state != GU_NONE)  return CE_SLEW_IN_MOTION;
+    if (mount.motorFault())      return CE_SLEW_ERR_HARDWARE_FAULT;
 
     CommandError e = goTo.validate();
     if (e != CE_NONE) return e;
@@ -105,6 +103,8 @@ CommandError Park::request() {
     // stop tracking
     wasTracking = mount.isTracking();
     mount.tracking(false);
+    mount.enable(true);
+    goTo.firstGoto = false;
 
     #if AXIS1_PEC == ON
       // turn off PEC while we park
@@ -119,7 +119,7 @@ CommandError Park::request() {
     // update state to parking
     state = PS_PARKING;
     settings.state = state;
-    nv.updateBytes(NV_MOUNT_PARK_BASE, &settings, sizeof(ParkSettings));
+    nv().kv().put(nvKey, settings);
 
     // get the park coordinate ready
     axis1.setBacklash(0.0L);
@@ -128,7 +128,8 @@ CommandError Park::request() {
     parkTarget.h = settings.position.h;
     parkTarget.d = settings.position.d;
     parkTarget.pierSide = settings.position.pierSide;
-    if (transform.mountType == ALTAZM) transform.equToHor(&parkTarget);
+    if (transform.mountType == ALTAZM) transform.equToHor(&parkTarget); else
+    if (transform.mountType == ALTALT) transform.equToAa(&parkTarget);
 
     // goto the park (mount) target coordinate
     VLF("MSG: Mount, parking");
@@ -137,10 +138,12 @@ CommandError Park::request() {
 
     if (e != CE_NONE) {
       mount.tracking(wasTracking);
+      axis1.setBacklash(mount.settings.backlash.axis1);
+      axis2.setBacklash(mount.settings.backlash.axis2);
 
       state = priorParkState;
       settings.state = state;
-      nv.updateBytes(NV_MOUNT_PARK_BASE, &settings, sizeof(ParkSettings));
+      nv().kv().put(nvKey, settings);
 
       VF(": Mount::parkGoto(), Failed to start goto (CE "); V(e); VL(")");
       return e;
@@ -152,7 +155,7 @@ CommandError Park::request() {
 void Park::requestAborted() {
   state = PS_UNPARKED;
   settings.state = state;
-  nv.updateBytes(NV_MOUNT_PARK_BASE, &settings, sizeof(ParkSettings));
+  nv().kv().put(nvKey, settings);
   
   // restore backlash settings
   axis1.setBacklash(mount.settings.backlash.axis1);
@@ -164,12 +167,16 @@ void Park::requestAborted() {
 // once parked save the park state
 void Park::requestDone() {
 
-  #if PARK_SENSE != OFF && PARK_SENSE_PIN != OFF
+  #if (PARK_SENSE) != OFF && (PARK_SENSE_PIN) != OFF
     if (sense.isOn(parkSenseHandle)) {
       VLF("MSG: Mount, park sense state indicates success.");
     } else {
       DLF("WRN: Mount, park sense state failed!");
+      axis1.setBacklash(mount.settings.backlash.axis1);
+      axis2.setBacklash(mount.settings.backlash.axis2);
       state = PS_PARK_FAILED;
+      settings.state = state;
+      nv().kv().put(nvKey, settings);
     }
   #endif
 
@@ -186,7 +193,7 @@ void Park::requestDone() {
     // save the axis state
     state = PS_PARKED;
     settings.state = state;
-    nv.updateBytes(NV_MOUNT_PARK_BASE, &settings, sizeof(ParkSettings));
+    nv().kv().put(nvKey, settings);
 
     #if ALIGN_MAX_NUM_STARS > 1  
       transform.align.modelWrite();
@@ -195,71 +202,111 @@ void Park::requestDone() {
     VLF("MSG: Mount, parking done");
   } else { DLF("ERR: Mount::parkFinish(), Parking failed"); }
 
-  axis1.enable(false);
-  axis2.enable(false);
+  mount.enable(MOUNT_ENABLE_IN_STANDBY == ON);
 }
 
 // returns a parked telescope to operation
 CommandError Park::restore(bool withTrackingOn) {
-  if (!settings.saved)         return CE_NO_PARK_POSITION_SET;
-  if (state != PS_PARKED) {
-    #if PARK_STRICT == ON
-      VLF("MSG: Unpark ignored, not parked");
-      return CE_NOT_PARKED;
-    #endif
-    if (!mount.isHome())       return CE_NOT_PARKED;
+  if (!settings.saved) return CE_NO_PARK_POSITION_SET;
+  if (!mount.startupAuthorityTrusted()) {
+    DLF("WRN: Mount, unpark rejected because startup authority is not trusted");
+    return CE_SLEW_ERR_UNSPECIFIED;
   }
-  if (goTo.state != GS_NONE)   return CE_SLEW_IN_MOTION;
-  if (guide.state != GU_NONE)  return CE_SLEW_IN_MOTION;
-  if (mount.isFault())         return CE_SLEW_ERR_HARDWARE_FAULT;
-  if (!site.isDateTimeReady()) return CE_PARKED;
+  if (state != PS_PARKED) {
+    #if MOUNT_STARTUP_MODE == SA_STRICT || MOUNT_COORDS_MEMORY == ON
+      VLF("MSG: Mount, unpark from home disabled by startup authority policy");
+      return CE_NOT_PARKED;
+    #else
+      if (goTo.absoluteEncodersPresent) {
+        VLF("MSG: Mount, unpark from home disabled when absolute position sources are present");
+        return CE_NOT_PARKED;
+      }
+      if (!mount.isHome()) {
+        VLF("MSG: Mount, unpark when not parked allowed at home only");
+        return CE_NOT_PARKED;
+      }
+    #endif
+  }
+  if (!site.isDateTimeReady()) {
+    VLF("MSG: Mount, unpark postponed no date/time");
+    return CE_PARKED;
+  }
+  if (mount.motorFault()) return CE_SLEW_ERR_HARDWARE_FAULT;
 
-  VLF("MSG: Unparking");
+  if (withTrackingOn) {
+    VLF("MSG: Mount, unparking");
+  } else {
+    VLF("MSG: Mount, recovering unpark position");
+  }
 
   #if AXIS1_PEC == ON
     wormSenseSteps = settings.wormSensePositionSteps;
   #endif
 
-  // reset the mount, zero backlash
-  home.reset();
-  axis1.setBacklashSteps(0);
-  axis2.setBacklashSteps(0);
+  if (!goTo.absoluteEncodersPresent) {
 
-  // load the pointing model
-  #if ALIGN_MAX_NUM_STARS > 1  
-    transform.align.modelRead();
-  #endif
+    // reset the mount, zero backlash
+    CommandError e = home.reset();
+    if (e != CE_NONE) {
+      DF("WRN: Mount, unpark reset failed (code "); D(e); DLF(")");
+      return e;
+    }
+    axis1.setBacklashSteps(0);
+    axis2.setBacklashSteps(0);
 
-  // get the park coordinate ready
-  Coordinate parkTarget;
-  parkTarget.h = settings.position.h;
-  parkTarget.d = settings.position.d;
-  parkTarget.pierSide = settings.position.pierSide;
+    // load the pointing model
+    #if ALIGN_MAX_NUM_STARS > 1  
+      transform.align.modelRead();
+    #endif
 
-  // set the mount target
-  double a1, a2;
-  if (transform.mountType == ALTAZM) transform.equToHor(&parkTarget);
-  transform.mountToInstrument(&parkTarget, &a1, &a2);
-  axis1.setInstrumentCoordinatePark(a1);
-  axis2.setInstrumentCoordinatePark(a2);
+    // get the park coordinate ready
+    Coordinate parkTarget;
+    parkTarget.h = settings.position.h;
+    parkTarget.d = settings.position.d;
+    parkTarget.pierSide = settings.position.pierSide;
+    if (transform.mountType == GEM) {
+      if (parkTarget.pierSide == PIER_SIDE_EAST && parkTarget.h < -limits.settings.pastMeridianE) parkTarget.h += PI*2.0;
+      if (parkTarget.pierSide == PIER_SIDE_WEST && parkTarget.h > limits.settings.pastMeridianW) parkTarget.h -= PI*2.0;
+    }
 
-  VF("MSG: Mount, unpark axis1 motor position "); VL(axis1.getMotorPositionSteps());
-  VF("MSG: Mount, unpark axis2 motor position "); VL(axis2.getMotorPositionSteps());
+    // set the mount target
+    double a1, a2;
+    if (transform.mountType == ALTAZM) transform.equToHor(&parkTarget); else
+    if (transform.mountType == ALTALT) transform.equToAa(&parkTarget);
 
-  // restore backlash settings
-  axis1.setBacklash(mount.settings.backlash.axis1);
-  axis2.setBacklash(mount.settings.backlash.axis2);
+    transform.mountToInstrument(&parkTarget, &a1, &a2);
+    axis1.setInstrumentCoordinatePark(a1);
+    axis2.setInstrumentCoordinatePark(a2);
+    mount.captureNominalIndexPositions();
+
+    VF("MSG: Mount, unpark axis1 motor position "); VL(axis1.getMotorPositionSteps());
+    VF("MSG: Mount, unpark axis2 motor position "); VL(axis2.getMotorPositionSteps());
+
+    // restore backlash settings
+    axis1.setBacklash(mount.settings.backlash.axis1);
+    axis2.setBacklash(mount.settings.backlash.axis2);
+  }
   
+  limits.enabled(true);
+  if (!goTo.absoluteEncodersPresent) mount.syncFromOnStepToEncoders = true;
+
+  if (withTrackingOn) {
+    state = PS_UNPARKED;
+    settings.state = state;
+    nv().kv().put(nvKey, settings);
+    mount.tracking(true);
+    VLF("MSG: Mount, unparking done");
+  } else {
+    VLF("MSG: Mount, recovering unpark position done");
+  }
+
+  return CE_NONE;
+}
+
+void Park::reset() {
   state = PS_UNPARKED;
   settings.state = state;
-  nv.updateBytes(NV_MOUNT_PARK_BASE, &settings, sizeof(ParkSettings));
-
-  limits.enabled(true);
-  mount.syncToEncoders(true);
-  if (withTrackingOn) mount.tracking(true);
-
-  VLF("MSG: Mount, unparking done");
-  return CE_NONE;
+  nv().kv().put(nvKey, settings);
 }
 
 // check input pin to initiate a park operation, if allowed
