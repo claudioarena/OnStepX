@@ -1,9 +1,6 @@
-.vscode/settings.json
-*.json
-src/plugins
-__vm/*
-*.vcxproj*
-.vs/*
-*.sln
-Debug/*
-Release/*
+.vscode/*
+test/*
+.pio/*
+/include/README
+/lib/README
+/lib/*
