@@ -2,7 +2,7 @@
  * Title       OnStepX
  * by          Howard Dutton
  *
- * Copyright (C) 2021-2022 Howard Dutton
+ * Copyright (C) 2021-2026 Howard Dutton
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,13 +43,14 @@
 // Firmware version ----------------------------------------------------------------------------------------------------------------
 #define FirmwareName                "On-Step"
 #define FirmwareVersionMajor        10
-#define FirmwareVersionMinor        11     // minor version 00 to 99
-#define FirmwareVersionPatch        "d"    // for example major.minor patch: 10.03c
-#define FirmwareVersionConfig       5      // internal, for tracking configuration file changes
+#define FirmwareVersionMinor        28     // minor version 00 to 99
+#define FirmwareVersionPatch        "i"    // for example major.minor patch: 10.03c
+#define FirmwareVersionConfig       6      // internal, for tracking configuration file changes
 
 #include "src/Common.h"
-NVS nv;
 #include "src/Validate.h"
+#include "src/lib/nv/Nv.h"
+#include "src/lib/analog/Analog.h"
 #include "src/lib/sense/Sense.h"
 #include "src/lib/tasks/OnTask.h"
 
@@ -62,18 +63,24 @@ extern Telescope telescope;
   extern void profiler();
 #endif
 
-void systemServices() {
-  if (!xBusy) nv.poll(false);
-}
-
 void sensesPoll() {
   sense.poll();
 }
 
 void setup() {
+  #if ADDON_SELECT_PIN != OFF
+    pinMode(ADDON_SELECT_PIN, OUTPUT);
+    digitalWrite(ADDON_SELECT_PIN, HIGH);
+  #endif
+
   #if DEBUG != OFF
     SERIAL_DEBUG.begin(SERIAL_DEBUG_BAUD);
     delay(2000);
+  #endif
+
+  // let any special processing the pinmap needs happen
+  #ifdef PIN_INIT
+    PIN_INIT();
   #endif
 
   // say hello
@@ -83,22 +90,27 @@ void setup() {
   VF("MSG: OnStepX, pinmap "); VLF(PINMAP_STR);
 
   // start low level hardware
-  VLF("MSG: Setup, HAL initalize");
+  VLF("MSG: System, HAL initialize");
   HAL_INIT();
-  HAL_NV_INIT();
+  WIRE_INIT();
+
+  analog.begin();
+
+  nv().setGate(&xBusy);
+  if (!nv().init()) {
+    DLF("ERR: Setup, NV (EEPROM/FRAM/Flash/etc.) device not found!");
+  }
   delay(2000);
 
-  // start system service task
-  VF("MSG: Setup, start system service task (rate 10ms priority 7)... ");
-  // add task for system services, runs at 10ms intervals so commiting 1KB of NV takes about 10 seconds
-  // the cache is scanned (for writing) at 2000 bytes/second but can be slower while reading data into the cache at startup
-  if (tasks.add(10, 0, true, 7, systemServices, "SysSvcs")) { VLF("success"); } else { VLF("FAILED!"); }
+  #if defined(NV_WIPE) && NV_WIPE == ON
+    nv().wipe();
+  #endif
 
   // start input sense polling task
   int pollingRate = round((1000.0F/HAL_FRACTIONAL_SEC)/2.0F);
   if (pollingRate < 1) pollingRate = 1;
-  VF("MSG: Setup, start input sense polling task (rate "); V(pollingRate); VF("ms priority 7)... ");
-  if (tasks.add(pollingRate, 0, true, 7, sensesPoll, "SenPoll")) { VLF("success"); } else { VLF("FAILED!"); }
+  VF("MSG: System, start input sense service task (rate "); V(pollingRate); VF("ms priority 7)... ");
+  if (tasks.add(pollingRate, 0, true, 7, sensesPoll, "SysSens")) { VLF("success"); } else { VLF("FAILED!"); }
 
   // start telescope object
   telescope.init(FirmwareName, FirmwareVersionMajor, FirmwareVersionMinor, FirmwareVersionPatch, FirmwareVersionConfig);
@@ -138,6 +150,10 @@ void setup() {
   #if DEBUG == PROFILER
     tasks.add(142, 0, true, 7, profiler, "Profilr");
   #endif
+
+  sense.poll();
+
+  telescope.ready = true;
 }
 
 void loop() {

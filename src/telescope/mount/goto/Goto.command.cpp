@@ -6,14 +6,16 @@
 #if defined(MOUNT_PRESENT)
 
 #include "../../../lib/tasks/OnTask.h"
+#include "../../../lib/nv/Nv.h"
 
 #include "../site/Site.h"
 #include "../Mount.h"
 #include "../guide/Guide.h"
 #include "../home/Home.h"
 #include "../limits/Limits.h"
+#include "../status/Status.h"
 
-bool Goto::command(char *reply, char *command, char *parameter, bool *supressFrame, bool *numericReply, CommandError *commandError) {
+bool Goto::command(char *reply, char *command, char *parameter, bool *suppressFrame, bool *numericReply, CommandError *commandError) {
   PrecisionMode precisionMode = PM_HIGH;
 
   if (command[0] == 'A') {
@@ -28,7 +30,8 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
     // :A?#       Align status
     //            Returns: mno#
     //            where m is the maximum number of alignment stars
-    //                  n is the current alignment star (0 otherwise)
+    //                  n is the current alignment star (0 otherwise) note: this is always 1 greater than the number
+    //                    of alignment stars accepted and so can range from '0' to ':' (':' = '0' + 10)
     //                  o is the last required alignment star when an alignment is in progress (0 otherwise)
     if (command[1] == '?' && parameter[0] == 0) {
       reply[0] = '0' + ALIGN_MAX_NUM_STARS;
@@ -88,18 +91,33 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
   //            Returns: "N/A#" on success, "En#" on failure where n is the error code per the :MS# command
   if (command[0] == 'C' && (command[1] == 'S' || command[1] == 'M') && parameter[0] == 0) {
     CommandError e;
+
     if (alignActive()) {
-      e = alignAddStar();
-      if (e != CE_NONE) { alignState.lastStar = 0; alignState.currentStar = 0; *commandError = e; }
+      e = alignAddStar(true);
+      if (e != CE_NONE) {
+        alignState.lastStar = 0;
+        alignState.currentStar = 0;
+        *commandError = e;
+        DLF("ERR: Mount, failed to add align point");
+      } else { VLF("MSG: Mount, align point added"); }
     } else {
+      Coordinate before = mount.getMountPosition(CR_MOUNT);
       PierSideSelect pps = settings.preferredPierSide;
       if (!mount.isHome() && PIER_SIDE_SYNC_CHANGE_SIDES == OFF) pps = PSS_SAME_ONLY;
       e = requestSync(gotoTarget, pps);
+      Coordinate after = mount.getMountPosition(CR_MOUNT);
+      if (before.pierSide != PIER_SIDE_NONE && before.pierSide != after.pierSide) mountStatus.soundAlert();
     }
+
     if (command[1] == 'M') {
-      if (e >= CE_SLEW_ERR_BELOW_HORIZON && e <= CE_SLEW_ERR_UNSPECIFIED) strcpy(reply,"E0");
-      reply[1] = (char)(e - CE_SLEW_ERR_BELOW_HORIZON) + '1';
-      if (e == CE_NONE) strcpy(reply,"N/A");
+      if (e == CE_NONE) strcpy(reply, "N/A"); else
+      if (e >= CE_SLEW_ERR_BELOW_HORIZON && e <= CE_SLEW_ERR_UNSPECIFIED) {
+        strcpy(reply, "E0");
+        reply[1] = (char)(e - CE_SLEW_ERR_BELOW_HORIZON) + '1';
+      } else {
+        DF("ERR: Mount, sync unspecified error occured ("); D(e); DLF(")");
+        strcpy(reply, "E9");
+      }
     }
     *numericReply = false;
   } else
@@ -113,7 +131,7 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
     } else {
       reply[0] = '#';
       reply[1] = 0;
-      *supressFrame = true;
+      *suppressFrame = true;
     }
     *numericReply = false;
   } else
@@ -166,27 +184,31 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
           static int star = 0;
           *numericReply = false;
           switch (parameter[1]) {
-            case '0': sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.ax1Cor))); break; // ax1Cor
-            case '1': sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.ax2Cor))); break; // ax2Cor
-            case '2': sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.altCor))); break; // altCor
-            case '3': sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.azmCor))); break; // azmCor
-            case '4': sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.doCor)));  break; // doCor
-            case '5': sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.pdCor)));  break; // pdCor
-            case '6': if (transform.mountType == FORK || transform.mountType == ALTAZM)              // ffCor
-              sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.dfCor))); else sprintf(reply,"%ld",(long)(0));
+            case '0': sprintf(reply, "%ld",(long)round((radToArcsec(transform.align.model.ax1Cor)))); break; // ax1Cor
+            case '1': sprintf(reply, "%ld",(long)round((radToArcsec(transform.align.model.ax2Cor)))); break; // ax2Cor
+            case '2': sprintf(reply, "%ld",(long)round((radToArcsec(transform.align.model.altCor)))); break; // altCor
+            case '3': sprintf(reply, "%ld",(long)round((radToArcsec(transform.align.model.azmCor)))); break; // azmCor
+            case '4': sprintf(reply, "%ld",(long)round((radToArcsec(transform.align.model.doCor))));  break; // doCor
+            case '5': sprintf(reply, "%ld",(long)round((radToArcsec(transform.align.model.pdCor))));  break; // pdCor
+            case '6': if (transform.mountType == FORK || transform.mountType == ALTAZM)                     // ffCor
+              sprintf(reply, "%ld",(long)(round(radToArcsec(transform.align.model.dfCor)))); else sprintf(reply, "%ld",(long)(0));
             break;
-            case '7': if (transform.mountType != FORK && transform.mountType != ALTAZM)              // dfCor
-              sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.dfCor))); else sprintf(reply,"%ld",(long)(0));
+            case '7': if (transform.mountType != FORK && transform.mountType != ALTAZM)                     // dfCor
+              sprintf(reply, "%ld",(long)(round(radToArcsec(transform.align.model.dfCor)))); else sprintf(reply, "%ld",(long)(0));
             break;
-            case '8': sprintf(reply,"%ld",(long)(radToArcsec(transform.align.model.tfCor))); break;  // tfCor
+            case '8': sprintf(reply, "%ld",(long)(round(radToArcsec(transform.align.model.tfCor)))); break;  // tfCor
+            case 'a': sprintf(reply, "%ld",(long)(round(radToDeg(transform.align.model.hcp)))); break;       // hcp
+            case 'b': sprintf(reply, "%ld",(long)(round(radToArcsec(transform.align.model.hca)))); break;    // hca
+            case 'c': sprintf(reply, "%ld",(long)(round(radToDeg(transform.align.model.dcp)))); break;       // dcp
+            case 'd': sprintf(reply, "%ld",(long)(round(radToArcsec(transform.align.model.dca)))); break;    // dca
             // number of stars, reset to first star
-            case '9': { int n = 0; if (alignState.currentStar > alignState.lastStar) n = alignState.lastStar; sprintf(reply,"%ld",(long)(n)); star = 0; } break;
+            case '9': { int n = 0; if (alignState.currentStar > alignState.lastStar) n = alignState.lastStar; sprintf(reply, "%ld",(long)(n)); star = 0; } break;
             case 'A': { convert.doubleToHms(reply,radToHrs(transform.align.actual[star].h),true,PM_HIGH); } break;
             case 'B': { convert.doubleToDms(reply,radToDeg(transform.align.actual[star].d),false,true,PM_HIGH); } break;
             case 'C': { convert.doubleToHms(reply,radToHrs(transform.align.mount[star].h),true,PM_HIGH); } break;
             case 'D': { convert.doubleToDms(reply,radToDeg(transform.align.mount[star].d),false,true,PM_HIGH); } break;
             // pier side (and increment n)
-            case 'E': sprintf(reply,"%ld",(long)(transform.align.mount[star].side)); star++; break;
+            case 'E': sprintf(reply, "%ld",(long)(transform.align.mount[star].side)); star++; break;
             default: *numericReply = true; *commandError = CE_CMD_UNKNOWN;
           }
         } else
@@ -195,28 +217,24 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
       // :GX9[n]#   Get setting [n]
       //            Returns: Value
       if (parameter[0] == '9')  {
-        Coordinate current;
-        *numericReply = false;
         switch (parameter[1]) {
-          case '2': sprintF(reply, "%0.3f", settings.usPerStepCurrent); break;     // current
-          case '3': sprintF(reply, "%0.3f", usPerStepBase); break;                 // default base
+          // current rate in us/step
+          case '2': sprintF(reply, "%0.3f", settings.usPerStepCurrent); break;
+          // default base rate in us/step
+          case '3': sprintF(reply, "%0.3f", usPerStepBase); break;
           // pierSide 0 = None, 1 = East, 2 = West (with suffix 'N' if meridian flips are disabled)
-          case '4':
-              current = mount.getMountPosition();
-              sprintf(reply, "%d%s", (int)current.pierSide, (!transform.meridianFlips)?" N":"");
-          break;
-          case '5': sprintf(reply, "%d", (int)settings.meridianFlipAuto); break;            // autoMeridianFlip
-          case '6': reply[0] = "EWB"[settings.preferredPierSide - 1]; reply[1] = 0; break;  // preferred pier side
+          case '4': sprintf(reply, "%d%s", (int)mount.getMountPosition().pierSide, (!transform.meridianFlips)?" N":""); break;
+          // autoMeridianFlip
+          case '5': sprintf(reply, "%d", (int)isAutoFlipEnabled()); break;
+          // preferred pier side
+          case '6': reply[0] = transform.meridianFlips ? "EWBA"[settings.preferredPierSide - 1] : 'E'; reply[1] = 0; break;
+          // current step rate in deg/s
           case '7': sprintF(reply, "%0.1f", (1000000.0F/settings.usPerStepCurrent)/degToRadF(axis1.getStepsPerMeasure())); break;
-          // rotator availablity 2 = rotate/derotate, 1 = rotate, 0 = off
-          case '8':
-            if (AXIS3_DRIVER_MODEL != OFF) {
-              if (transform.mountType == ALTAZM) strcpy(reply, "D"); else strcpy(reply, "R");
-            } else strcpy(reply, "N");
-          break;
-          case '9': sprintF(reply, "%0.3f",usPerStepLowerLimit()); break;          // fastest step rate in us
+          // fastest step rate in us/step
+          case '9': sprintF(reply, "%0.3f",usPerStepLowerLimit()); break;
           default: return false;
         }
+       *numericReply = false;
       } else return false;
     } else return false;
   } else
@@ -232,7 +250,7 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
       if (e >= CE_SLEW_ERR_BELOW_HORIZON && e <= CE_SLEW_ERR_UNSPECIFIED) reply[0] = (char)(e - CE_SLEW_ERR_BELOW_HORIZON) + '1';
       if (e == CE_NONE) reply[0] = '0';
       *numericReply = false;
-      *supressFrame = true;
+      *suppressFrame = true;
       *commandError = e;
     } else
 
@@ -240,14 +258,17 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
     //            Returns:
     //              0=destination is East of the pier
     //              1=destination is West of the pier
-    //              2=an error occured
+    //              2=destination is Unknown
     if (command[1] == 'D' && parameter[0] == 0) {
-      CommandError e = setTarget(&gotoTarget, settings.preferredPierSide);
+      Coordinate coords = gotoTarget;
+      coords.pierSide = PIER_SIDE_NONE;
+      transform.nativeToMount(&coords);
+      CommandError e = setTarget(&coords, settings.preferredPierSide);
       strcpy(reply, "2");
       if (e == CE_NONE && target.pierSide == PIER_SIDE_EAST) reply[0] = '0';
       if (e == CE_NONE && target.pierSide == PIER_SIDE_WEST) reply[0] = '1';
       *numericReply = false;
-      *supressFrame = true;
+      *suppressFrame = true;
       *commandError = e;
     } else
 
@@ -256,7 +277,7 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
     //  :MNw#  Goto current RA/Dec but West of the Pier (within meridian limit overlap)
     //         Returns: 0..9, see :MS#
     if (command[1] == 'N') {
-      if (transform.mountType != ALTAZM) {
+      if (transform.meridianFlips) {
         Coordinate newTarget = mount.getPosition();
         CommandError e = CE_NONE;
 
@@ -276,7 +297,7 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
           if (e == CE_NONE) reply[0] = '0';
           reply[1] = 0;
           *numericReply = false;
-          *supressFrame = true;
+          *suppressFrame = true;
         }
         *commandError = e;
       } else *commandError = CE_CMD_UNKNOWN;
@@ -285,10 +306,10 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
     // :MP#       Goto the Current Position for Polar Align
     //            Returns: 0..9, see :MS#
     if (command[1] == 'P' && parameter[0] == 0) {
-      if (transform.mountType != ALTAZM) {
+      if (transform.isEquatorial()) {
         Coordinate newTarget = mount.getPosition();
         CommandError e = validate();
-        if (e == CE_NONE) e = limits.validateTarget(&newTarget);
+        if (e == CE_NONE) e = limits.validateTarget(&newTarget, true);
         if (e == CE_NONE) {
           #if ALIGN_MAX_NUM_STARS > 1
             transform.align.model.altCor = 0.0;
@@ -300,7 +321,7 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
         if (e == CE_NONE) reply[0] = '0';
         reply[1] = 0;
         *numericReply = false;
-        *supressFrame = true;
+        *suppressFrame = true;
         *commandError = e;
       } else *commandError = CE_CMD_UNKNOWN;
     } else
@@ -323,7 +344,7 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
       if (e >= CE_SLEW_ERR_BELOW_HORIZON && e <= CE_SLEW_ERR_UNSPECIFIED) reply[0] = (char)(e - CE_SLEW_ERR_BELOW_HORIZON) + '1';
       if (e == CE_NONE) reply[0] = '0';
       *numericReply = false;
-      *supressFrame = true;
+      *suppressFrame = true;
       *commandError = e;
     } else return false;
   } else
@@ -382,21 +403,36 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
             case '3': transform.align.model.azmCor = arcsecToRad(atol(&parameter[3])); break; // azmCor
             case '4': transform.align.model.doCor = arcsecToRad(atol(&parameter[3])); break;  // doCor
             case '5': transform.align.model.pdCor = arcsecToRad(atol(&parameter[3])); break;  // pdCor
-            case '6': if (transform.mountType == FORK || transform.mountType == ALTAZM)
-              transform.align.model.dfCor = arcsecToRad(atol(&parameter[3])); break;          // fdCor or ffCor
+            case '6':
+              if (transform.mountType == FORK || transform.mountType == ALTAZM)               // fdCor or ffCor
+                transform.align.model.dfCor = arcsecToRad(atol(&parameter[3]));
             break;
-            case '7': if (transform.mountType != FORK && transform.mountType != ALTAZM)
-              transform.align.model.dfCor = arcsecToRad(atol(&parameter[3])); break;          // fdCor or ffCor
+            case '7':
+              if (transform.mountType != FORK && transform.mountType != ALTAZM)               // fdCor or ffCor
+                transform.align.model.dfCor = arcsecToRad(atol(&parameter[3]));                 
             break;
             case '8': transform.align.model.tfCor = arcsecToRad(atol(&parameter[3])); break;  // tfCor
-            // use :SX09,0# to start upload of stars for align, when done use :SX09,1# to calculate the pointing model
+            case 'a': transform.align.model.hcp = degToRad(atol(&parameter[3])); break;       // hcp
+            case 'b': transform.align.model.hca = arcsecToRad(atol(&parameter[3])); break;    // hca
+            case 'c': transform.align.model.dcp = degToRad(atol(&parameter[3])); break;       // dcp
+            case 'd': transform.align.model.dca = arcsecToRad(atol(&parameter[3])); break;    // dca
+            // use :SX09,0# to start upload of stars for align, when done use :SX09,1# to calculate the pointing model, or :SX09,2# to force model activation
             case '9': {
                 int n = atol(&parameter[3]);
-                if (n == 1 && star >= 2) {
-                  alignState.lastStar = star;
-                  alignState.currentStar = star + 1;
-                  transform.align.createModel(star);
-                } else star = 0;
+                if (n == 0) {
+                  star = 0;
+                  alignReset();
+                } else
+                if (n == 1) {
+                  if (star >= 1) {
+                    alignState.lastStar = star;
+                    alignState.currentStar = star + 1;
+                    transform.align.createModel(star);
+                  }
+                } else
+                if (n == 2) {
+                  transform.align.modelIsReady = true;
+                } else *commandError = CE_PARAM_RANGE;
               }
             break;
             // Actual HA (n)
@@ -409,26 +445,41 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
             case 'D': if (!convert.dmsToDouble(&d, &parameter[3], true, PM_HIGH)) *commandError = CE_PARAM_FORM; else transform.align.mount[star].d = degToRad(d); break;
             // Mount PierSide (and increment n)
             case 'E':
-              transform.align.actual[star].side = transform.align.mount[star].side = atol(&parameter[3]);
-              if (transform.mountType == ALTAZM) {
-                Coordinate temp;
-                temp.h = transform.align.actual[star].h;
-                temp.d = transform.align.actual[star].d;
-                transform.equToHor(&temp);
-                transform.align.actual[star].ax1 = temp.z;
-                transform.align.actual[star].ax2 = temp.a;
-                temp.h = transform.align.mount[star].h;
-                temp.d = transform.align.mount[star].d;
-                transform.equToHor(&temp);
-                transform.align.mount[star].ax1 = temp.z;
-                transform.align.mount[star].ax2 = temp.a;
-              } else {
-                transform.align.actual[star].ax1 = transform.align.actual[star].h;
-                transform.align.actual[star].ax2 = transform.align.actual[star].d;
-                transform.align.mount[star].ax1 = transform.align.mount[star].h;
-                transform.align.mount[star].ax2 = transform.align.mount[star].d;
+              if (star <= 8) {
+                transform.align.actual[star].side = transform.align.mount[star].side = atol(&parameter[3]);
+                if (transform.mountType == ALTAZM) {
+                  Coordinate temp;
+                  temp.h = transform.align.actual[star].h;
+                  temp.d = transform.align.actual[star].d;
+                  transform.equToHor(&temp);
+                  transform.align.actual[star].ax1 = temp.z;
+                  transform.align.actual[star].ax2 = temp.a;
+                  temp.h = transform.align.mount[star].h;
+                  temp.d = transform.align.mount[star].d;
+                  transform.equToHor(&temp);
+                  transform.align.mount[star].ax1 = temp.z;
+                  transform.align.mount[star].ax2 = temp.a;
+                } else
+                if (transform.mountType == ALTALT) {
+                  Coordinate temp;
+                  temp.h = transform.align.actual[star].h;
+                  temp.d = transform.align.actual[star].d;
+                  transform.equToAa(&temp);
+                  transform.align.actual[star].ax1 = temp.aa1;
+                  transform.align.actual[star].ax2 = temp.aa2;
+                  temp.h = transform.align.mount[star].h;
+                  temp.d = transform.align.mount[star].d;
+                  transform.equToAa(&temp);
+                  transform.align.mount[star].ax1 = temp.aa1;
+                  transform.align.mount[star].ax2 = temp.aa2;
+                } else {
+                  transform.align.actual[star].ax1 = transform.align.actual[star].h;
+                  transform.align.actual[star].ax2 = transform.align.actual[star].d;
+                  transform.align.mount[star].ax1 = transform.align.mount[star].h;
+                  transform.align.mount[star].ax2 = transform.align.mount[star].d;
+                }
+                star++;
               }
-              star++;
             break;
             default: *commandError = CE_CMD_UNKNOWN;
           }
@@ -448,7 +499,7 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
               if (settings.usPerStepCurrent > usPerStepBase*2.0) settings.usPerStepCurrent = usPerStepBase*2.0;
               if (settings.usPerStepCurrent < usPerStepLowerLimit()) settings.usPerStepCurrent = usPerStepLowerLimit();
               if (GOTO_FEATURE == OFF) settings.usPerStepCurrent = usPerStepBase; // force base rate
-              nv.updateBytes(NV_MOUNT_GOTO_BASE, &settings, sizeof(GotoSettings));
+              nv().kv().put(nvKey, settings);
               updateAccelerationRates();
             } else *commandError = CE_SLEW_IN_MOTION;
           break;
@@ -458,7 +509,7 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
             if (state == GS_NONE && guide.state == GU_NONE) {
               switch (parameter[3]) {
                 case '5': settings.usPerStepCurrent = usPerStepBase*2.0; break; // 50%
-                case '4': settings.usPerStepCurrent = usPerStepBase*1.5; break; // 75%
+                case '4': settings.usPerStepCurrent = usPerStepBase*1.5; break; // 66.7% (2/3x)
                 case '3': settings.usPerStepCurrent = usPerStepBase;     break; // 100%
                 case '2': settings.usPerStepCurrent = usPerStepBase/1.5; break; // 150%
                 case '1': settings.usPerStepCurrent = usPerStepBase/2.0; break; // 200%
@@ -466,53 +517,59 @@ bool Goto::command(char *reply, char *command, char *parameter, bool *supressFra
               }
               if (settings.usPerStepCurrent < usPerStepLowerLimit()) settings.usPerStepCurrent = usPerStepLowerLimit();
               if (GOTO_FEATURE == OFF) settings.usPerStepCurrent = usPerStepBase; // force base rate
-              nv.updateBytes(NV_MOUNT_GOTO_BASE, &settings, sizeof(GotoSettings));
+              nv().kv().put(nvKey, settings);
               updateAccelerationRates();
             } else *commandError = CE_SLEW_IN_MOTION;
           break;
+
           // autoMeridianFlip
           case '5':
-            if (transform.meridianFlips) {
+            if ((transform.isEquatorial()) && transform.meridianFlips && GOTO_FEATURE != OFF) {
               if (parameter[3] == '0' || parameter[3] == '1') {
-                if (GOTO_FEATURE == OFF) parameter[3] = '0'; // disable autoflip
                 settings.meridianFlipAuto = parameter[3] - '0';
                 #if MFLIP_AUTOMATIC_MEMORY == ON
-                  nv.updateBytes(NV_MOUNT_GOTO_BASE, &settings, sizeof(GotoSettings));
+                  nv().kv().put(nvKey, settings);
                 #endif
               } else *commandError = CE_PARAM_RANGE;
-            }
+            } else *commandError = CE_CMD_UNKNOWN;
           break;
           // preferred pier side
           case '6':
-            switch (parameter[3]) {
-              case 'E': settings.preferredPierSide = PSS_EAST; break;
-              case 'W': settings.preferredPierSide = PSS_WEST; break;
-              case 'B': settings.preferredPierSide = PSS_BEST; break;
-              default: *commandError = CE_PARAM_RANGE;
-            }
-            #if PIER_SIDE_PREFERRED_MEMORY == ON
-              nv.updateBytes(NV_MOUNT_GOTO_BASE, &settings, sizeof(GotoSettings));
-            #endif
+            if (transform.meridianFlips && GOTO_FEATURE != OFF) {
+              switch (parameter[3]) {
+                case 'E': settings.preferredPierSide = PSS_EAST; break;
+                case 'W': settings.preferredPierSide = PSS_WEST; break;
+                case 'B': settings.preferredPierSide = PSS_BEST; break;
+                case 'A': settings.preferredPierSide = PSS_AUTO; break;
+                default: *commandError = CE_PARAM_RANGE;
+              }
+              #if PIER_SIDE_PREFERRED_MEMORY == ON
+                nv().kv().put(nvKey, settings);
+              #endif
+            } else *commandError = CE_CMD_UNKNOWN;
           break;
-
           // pause at home on meridian flip
           case '8':
-            if (parameter[3] == '0' || parameter[3] == '1') {
-              #if GOTO_FEATURE == ON
-                settings.meridianFlipPause = parameter[3] - '0';
-                #if MFLIP_PAUSE_HOME_MEMORY == ON
-                  nv.updateBytes(NV_MOUNT_GOTO_BASE, &settings, sizeof(GotoSettings));
-                #endif
-             #endif
-            } else *commandError = CE_PARAM_RANGE;
+            if (transform.meridianFlips && GOTO_FEATURE != OFF) {
+              if (parameter[3] == '0' || parameter[3] == '1') {
+                #if GOTO_FEATURE == ON
+                  settings.meridianFlipPause = parameter[3] - '0';
+                  #if MFLIP_PAUSE_HOME_MEMORY == ON
+                    nv().kv().put(nvKey, settings);
+                  #endif
+              #endif
+              } else *commandError = CE_PARAM_RANGE;
+            } else *commandError = CE_CMD_UNKNOWN;
           break;
           // continue if paused at home
           case '9':
-            if (parameter[3] == '1') {
-              #if GOTO_FEATURE == ON
-                if (meridianFlipHome.paused) meridianFlipHome.resume = true;
-              #endif
-            } else *commandError = CE_PARAM_RANGE;
+            if (transform.meridianFlips && GOTO_FEATURE != OFF) {
+              if (parameter[3] == '1') {
+                #if GOTO_FEATURE == ON
+                  if (meridianFlipHome.paused) meridianFlipHome.resume = true;
+                #endif
+              } else *commandError = CE_PARAM_RANGE;
+            } else *commandError = CE_CMD_UNKNOWN;
           break;
           default: return false;
         }

@@ -17,29 +17,38 @@ bool _serial_bridge_initialized = false;
 
 SerialBridge::SerialBridge(int16_t axis) {
   if (axis < 1 || axis > 9) return;
-  initialized = true;
+  
+  this->axis = axis;
 
-  axis--;
-  this->channel[axis] = '1' + axis;
+  this->channel[0] = '0' + axis;
+
+  ready = true;
 }
 
 int32_t SerialBridge::read() {
-  if (!initialized) return 0;
+  if (!ready) return 0;
 
-  if (millis() - lastReadMillis > 20) {
-    count = raw();
-    lastReadMillis = millis();
+  const unsigned long now = millis();
+  if (now - lastReadMillis > 10U) {
+    count = getCount();
+
+    #if ENCODER_VELOCITY == ON
+      velNoteSampledCount(count);
+    #endif
+
+    lastReadMillis = now;
   }
-  return count + offset;
+
+  return count + index;
 }
 
-void SerialBridge::write(int32_t count) {
-  if (!initialized) return;
+void SerialBridge::write(int32_t position) {
+  if (!ready) return;
 
-  offset = count - raw();
+  index = position - getCount();
 }
 
-int32_t SerialBridge::raw() {
+int32_t SerialBridge::getCount() {
   if (!_serial_bridge_initialized) {
     #if defined(SERIAL_ENCODER_RX) && defined(SERIAL_ENCODER_TX) && !defined(SERIAL_ENCODER_RXTX_SET)
       SERIAL_ENCODER.begin(SERIAL_ENCODER_BAUD, SERIAL_8N1, SERIAL_ENCODER_RX, SERIAL_ENCODER_TX);
@@ -52,25 +61,27 @@ int32_t SerialBridge::raw() {
 
   SERIAL_ENCODER.print(channel);
   
-  char c;
   char result[32] = "";
-  int index = 0;
+  char c;
+  int i = 0;
+  errorDetected = false;
   unsigned long start = millis();
   do {
     if (SERIAL_ENCODER.available()) c = SERIAL_ENCODER.read(); else c = 'x';
     if ((c >= '0' && c <= '9') || c == '-') {
-      result[index++] = c;
-      result[index] = 0;
+      result[i++] = c;
+      result[i] = 0;
     }
-  } while (c != 13 && (millis() - start) < 4 && index < 16);
+    if (c == 'E') errorDetected = true;
+  } while (c != 13 && i < 16 && (millis() - start < 4U);
 
   if (strlen(result) > 0) {
     return atoi(result);
   } else {
-    VLF("WRN: SerialBridge, timed out!");
-    error = true;
+    DLF("WRN: SerialBridge getCount(), timed out!");
+    error++;
     return 0;
   }
-} 
+}
 
 #endif

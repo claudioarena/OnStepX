@@ -10,8 +10,8 @@
 
 char const *ObjectStr[] = {"UNK", "OC", "GC", "PN", "DN", "SG", "EG", "IG", "KNT", "SNR", "GAL", "CN", "STR", "PLA", "CMT", "AST"};
 
-bool Library::command(char *reply, char *command, char *parameter, bool *supressFrame, bool *numericReply, CommandError *commandError) {
-  *supressFrame = false;
+bool Library::command(char *reply, char *command, char *parameter, bool *suppressFrame, bool *numericReply, CommandError *commandError) {
+  *suppressFrame = false;
 
     //   L - Object Library Commands
     if (command[0] == 'L') {
@@ -158,7 +158,7 @@ bool Library::command(char *reply, char *command, char *parameter, bool *supress
       // :L?#       Get library free records (all catalogs)
       //            Returns: n#
       if (command[1] == '?' && parameter[0] == 0) { 
-        sprintf(reply, "%ld", recFreeAll());
+        sprintf(reply, "%u", recFreeAll());
         *numericReply = false;
       } else 
 

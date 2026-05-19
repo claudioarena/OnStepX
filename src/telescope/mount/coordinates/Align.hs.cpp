@@ -3,7 +3,7 @@
 //
 // by Howard Dutton
 //
-// Copyright (C) 2012 to 2021 Howard Dutton
+// Copyright (C) 2012 to 2024 Howard Dutton
 //
 
 #include "Align.hs.h"
@@ -11,6 +11,7 @@
 #if defined(MOUNT_PRESENT) && defined(HIGH_SPEED_ALIGN)
 
 #include "../../../lib/tasks/OnTask.h"
+#include "../../../lib/nv/Nv.h"
 
 #include "../coordinates/Transform.h"
 #include "../../Telescope.h"
@@ -27,17 +28,19 @@ void GeoAlign::init(int8_t mountType, float latitude) {
   if (mountType == ALTAZM) {
     cosLat = cosf(Deg90);
     sinLat = sinf(Deg90);
+  } else
+  if (mountType == ALTALT) {
+    cosLat = cosf(0.0F);
+    sinLat = sinf(0.0F);
   } else {
     cosLat = cosf(latitude);
     sinLat = sinf(latitude);
   }
 }
 
-
 void GeoAlign::modelRead() {
-  // get misc settings from NV
-  if (AlignModelSize < sizeof(AlignModel)) { nv.initError = true; DL("ERR: GeoAlign::readModel(), AlignModelSize error"); }
-  nv.readBytes(NV_ALIGN_MODEL_BASE, &model, AlignModelSize);
+  if (!nv().kv().getOrInit("ALIGN_MODEL", model))  { DLF("WRN: Nv, init failed for ALIGN_MODEL"); }
+
   if (model.ax1Cor < -Deg360 || model.ax1Cor > Deg360) { model.ax1Cor = 0; DLF("ERR: GeoAlign::readModel(), bad NV ax1Cor"); }
   if (model.ax2Cor < -Deg360 || model.ax2Cor > Deg360) { model.ax2Cor = 0; DLF("ERR: GeoAlign::readModel(), bad NV ax2Cor"); }
   if (model.dfCor  <    -256 || model.dfCor  >    256) { model.dfCor  = 0; DLF("ERR: GeoAlign::readModel(), bad NV dfCor");  }
@@ -46,11 +49,14 @@ void GeoAlign::modelRead() {
   if (model.pdCor  <    -256 || model.pdCor  >    256) { model.pdCor  = 0; DLF("ERR: GeoAlign::readModel(), bad NV pdCor");  }
   if (model.altCor <  -16384 || model.altCor >  16384) { model.altCor = 0; DLF("ERR: GeoAlign::readModel(), bad NV altCor"); }
   if (model.azmCor <  -16384 || model.azmCor >  16384) { model.azmCor = 0; DLF("ERR: GeoAlign::readModel(), bad NV azmCor"); }
+  if (model.hcp    < -Deg360 || model.hcp    > Deg360) { model.hcp = 0;    DLF("ERR: GeoAlign::readModel(), bad NV hcp"); }
+  if (model.hca    <  -16384 || model.hca    > 16384)  { model.hca = 0;    DLF("ERR: GeoAlign::readModel(), bad NV hca"); }
+  if (model.dcp    < -Deg360 || model.dcp    > Deg360) { model.dcp = 0;    DLF("ERR: GeoAlign::readModel(), bad NV dcp"); }
+  if (model.dca    <  -16384 || model.dca    > 16384)  { model.dca = 0;    DLF("ERR: GeoAlign::readModel(), bad NV dca"); }
 }
 
 void GeoAlign::modelWrite() {
-  if (AlignModelSize < sizeof(AlignModel)) { nv.initError = true; DL("ERR: GeoAlign::writeModel(), AlignModelSize error"); }
-  nv.updateBytes(NV_ALIGN_MODEL_BASE, &model, AlignModelSize);
+  nv().kv().put("ALIGN_MODEL", model);
 }
 
 void GeoAlign::modelClear() {
@@ -63,6 +69,10 @@ void GeoAlign::modelClear() {
   model.pdCor  = 0;  // altitude axis/Azimuth orthogonal correction
   model.dfCor  = 0;  // altitude axis axis flex
   model.tfCor  = 0;  // tube flex
+  model.hcp    = 0;  // cos(Axis1) phase
+  model.hca    = 0;  // cos(Axis1) amplitude
+  model.dcp    = 0;  // cos(Axis2) phase
+  model.dca    = 0;  // cos(Axis2) amplitude
   modelIsReady = false;
 }
 
@@ -89,6 +99,15 @@ CommandError GeoAlign::addStar(int thisStar, int numberStars, Coordinate *actual
     transform.equToHor(actual);
     this->actual[i].ax1 = actual->z;
     this->actual[i].ax2 = actual->a;
+  } else
+  if (mountType == ALTALT) {
+    transform.equToAa(mount);
+    this->mount[i].ax1 = mount->aa1;
+    this->mount[i].ax2 = mount->aa2;
+
+    transform.equToAa(actual);
+    this->actual[i].ax1 = actual->aa1;
+    this->actual[i].ax2 = actual->aa2;
   } else {
     this->mount[i].ax1 = mount->h;
     this->mount[i].ax2 = mount->d;
@@ -159,7 +178,7 @@ void GeoAlign::correct(AlignCoordinate &mount, float sf, float _deo, float _pd, 
   // ------------------------------------------------------------
   // Axis flex
   DF  = _df*sf;
-  DFd = -DF*(cosLat*mount.cosA1+sinLat*mount.tanA2);
+  DFd = -DF*(cosLat*mount.cosA1 + sinLat*mount.tanA2);
 
   // ------------------------------------------------------------
   // Fork flex
@@ -171,7 +190,7 @@ void GeoAlign::correct(AlignCoordinate &mount, float sf, float _deo, float _pd, 
   TF  = _tf*sf;
 
   TFh = TF*(cosLat*mount.sinA1*(1.0/mount.cosA2));
-  TFd = TF*(cosLat*mount.cosA1-sinLat*mount.cosA2);
+  TFd = TF*(cosLat*mount.cosA1*mount.sinA2-sinLat*mount.cosA2);
 
   // ------------------------------------------------------------
   *a1r  = (-PZ*mount.cosA1*mount.tanA2 + PA*mount.sinA1*mount.tanA2 + DOh + PDh + TFh);
@@ -229,15 +248,16 @@ void GeoAlign::doSearch(float sf, int p1, int p2, int p3, int p4, int p5, int p6
         ma1 = ma1 + ohe;
         ma2 = ma2 + ode;
       }
- 
+
       mount[l].ma1 = ma1;
       mount[l].ma2 = ma2;
       mount[l].sinA1 = sinf(ma1);
       mount[l].cosA1 = cosf(ma1);
+      mount[l].sinA2 = sinf(ma2);
       mount[l].cosA2 = cosf(ma2);
-      mount[l].tanA2 = tanf(ma2);
+      mount[l].tanA2 = mount[l].sinA2/mount[l].cosA2;
     }
-    
+
     for (_deo = _deo_m; _deo <= _deo_p; _deo++)
     for (_pd = _pd_m; _pd <= _pd_p; _pd++)
     for (_pz = _pz_m; _pz <= _pz_p; _pz++)
@@ -327,7 +347,8 @@ void GeoAlign::autoModel(int n) {
   best_ohw = best_ohe;
 
   // fork flex or dec axis flex, as appropriate
-  if (mountType == ALTAZM) { Ff = 0; Df = 0; } else if (mountType == FORK) { Ff = 1; Df = 0; } else { Ff = 0; Df = 1; }
+  if (mountType == ALTAZM) { Ff = 0; Df = 0; } else
+  if (mountType == FORK) { Ff = 1; Df = 0; } else { Ff = 0; Df = 1; }
 
   // only search for cone error if > 2 stars
   int Do = 0;
@@ -344,6 +365,7 @@ void GeoAlign::autoModel(int n) {
   #ifdef HAL_SLOW_PROCESSOR
     doSearch(256,Do,0,1,1,0, 0, 0,1,1);
     doSearch(128,Do,0,1,1,0, 0, 0,1,1);
+    doSearch( 64,Do,0,1,1,0, 0, 0,1,1);
   #else
     if (num > 4) {
       doSearch(256,Do,1,1,1,0,Ff,Df,1,1);
@@ -352,6 +374,10 @@ void GeoAlign::autoModel(int n) {
       #ifdef HAL_FAST_PROCESSOR
         doSearch( 32,Do,1,1,1,1,Ff,Df,1,1);
         doSearch( 16,Do,1,1,1,1,Ff,Df,1,1);
+        doSearch(  8,Do,1,1,1,1,Ff,Df,1,1);
+        #ifdef HAL_VFAST_PROCESSOR
+          doSearch(  4,Do,1,1,1,1,Ff,Df,1,1);
+        #endif
       #endif
     } else {
       doSearch(256,Do,0,1,1,0, 0, 0,1,1);
@@ -360,6 +386,10 @@ void GeoAlign::autoModel(int n) {
       doSearch( 32,Do,0,1,1,0, 0, 0,1,1);
       #ifdef HAL_FAST_PROCESSOR
         doSearch( 16,Do,0,1,1,0, 0, 0,1,1);
+        doSearch(  8,Do,0,1,1,0, 0, 0,1,1);
+        #ifdef HAL_VFAST_PROCESSOR
+          doSearch(  4,Do,0,1,1,0, 0, 0,1,1);
+        #endif
       #endif
     }
   #endif
@@ -376,6 +406,11 @@ void GeoAlign::autoModel(int n) {
   model.ax1Cor = arcsecToRad(best_ohw);
   model.ax2Cor = arcsecToRad(best_odw);
 
+  model.hcp = 0;
+  model.hca = 0;
+  model.dcp = 0;
+  model.dca = 0;
+
   // update status and exit
   modelIsReady = true;
 
@@ -391,13 +426,8 @@ void GeoAlign::observedPlaceToMount(Coordinate *coord) {
   if (coord->pierSide == PIER_SIDE_WEST) p = -1.0F;
   
   float ax1, ax2;
-  if (mountType == ALTAZM) {
-    ax1 = coord->z;
-    ax2 = coord->a;
-  } else {
-    ax1 = coord->h;
-    ax2 = coord->d;
-  }
+  if (mountType == ALTAZM) { ax1 = coord->z; ax2 = coord->a; } else
+  if (mountType == ALTALT) { ax1 = coord->aa1; ax2 = coord->aa2; } else { ax1 = coord->h; ax2 = coord->d; }
   
   if (ax2 >  Deg90) ax2 =  Deg90;
   if (ax2 < -Deg90) ax2 = -Deg90;
@@ -432,15 +462,19 @@ void GeoAlign::observedPlaceToMount(Coordinate *coord) {
   
       // Tube flex
       float TFh = model.tfCor*(cosLat*sinAx1*(1.0F/cosAx2));
-      float TFd = model.tfCor*(cosLat*cosAx1 - sinLat*cosAx2);
+      float TFd = model.tfCor*(cosLat*cosAx1*sinAx2 - sinLat*cosAx2);
   
       // polar misalignment
       float ax1c = -model.azmCor*cosAx1*(sinAx2/cosAx2) + model.altCor*sinAx1*(sinAx2/cosAx2);
       float ax2c = +model.azmCor*sinAx1                 + model.altCor*cosAx1;
 
+      // cos() linearization for main drive mechanism runout etc.
+      float COSh = cos(a1 + model.hcp)*model.hca*p;
+      float COSd = cos(a2 + model.dcp)*model.dca*p;
+
       // improved guess at instrument coordinate
-      a1 = ax1 + (ax1c + PDh + DOh + TFh);
-      a2 = ax2 + (ax2c + DFd + TFd);
+      a1 = ax1 + (ax1c + PDh + DOh + TFh + COSh);
+      a2 = ax2 + (ax2c + DFd + TFd + COSd);
     }
   }
 
@@ -448,13 +482,8 @@ void GeoAlign::observedPlaceToMount(Coordinate *coord) {
   a1 = a1 - model.ax1Cor;
   a2 = a2 - model.ax2Cor*-p;
 
-  if (mountType == ALTAZM) {
-    coord->z = a1;
-    coord->a = a2;
-  } else {
-    coord->h = a1;
-    coord->d = a2;
-  }
+  if (mountType == ALTAZM) { coord->z = a1; coord->a = a2; } else
+  if (mountType == ALTALT) { coord->aa1 = a1; coord->aa2 = a2; } else { coord->h = a1; coord->d = a2; }
 }
 
 void GeoAlign::mountToObservedPlace(Coordinate *coord) {
@@ -464,13 +493,8 @@ void GeoAlign::mountToObservedPlace(Coordinate *coord) {
   if (coord->pierSide == PIER_SIDE_WEST) p = -1.0F;
 
   float ax1, ax2;
-  if (mountType == ALTAZM) {
-    ax1 = coord->z;
-    ax2 = coord->a;
-  } else {
-    ax1 = coord->h;
-    ax2 = coord->d;
-  }
+  if (mountType == ALTAZM) { ax1 = coord->z; ax2 = coord->a; } else
+  if (mountType == ALTALT) { ax1 = coord->aa1; ax2 = coord->aa2; } else { ax1 = coord->h; ax2 = coord->d; }
   
   ax1 = ax1 + model.ax1Cor;
   ax2 = ax2 + model.ax2Cor*-p;
@@ -503,15 +527,19 @@ void GeoAlign::mountToObservedPlace(Coordinate *coord) {
 
     // Tube flex
     float TFh = model.tfCor*(cosLat*sinAx1*(1.0F/cosAx2));
-    float TFd = model.tfCor*(cosLat*cosAx1 - sinLat*cosAx2);
+    float TFd = model.tfCor*(cosLat*cosAx1*sinAx2 - sinLat*cosAx2);
    
     // ------------------------------------------------------------
     // polar misalignment
     float a1 = -model.azmCor*cosAx1*(sinAx2/cosAx2) + model.altCor*sinAx1*(sinAx2/cosAx2);
     float a2 = +model.azmCor*sinAx1                 + model.altCor*cosAx1;
 
-    ax1 = ax1 - (a1 + PDh + DOh + TFh);
-    ax2 = ax2 - (a2 + DFd + TFd);
+    // cos() linearization for main drive mechanism runout etc.
+    float COSh = cos(a1 + model.hcp)*model.hca*p;
+    float COSd = cos(a2 + model.dcp)*model.dca*p;
+
+    ax1 = ax1 - (a1 + PDh + DOh + TFh + COSh);
+    ax2 = ax2 - (a2 + DFd + TFd + COSd);
   }
 
   if (ax2 >  Deg90) ax2 =  Deg90;
@@ -522,6 +550,12 @@ void GeoAlign::mountToObservedPlace(Coordinate *coord) {
     while (ax1 < -Deg360) ax1 += Deg360;
     coord->z = ax1;
     coord->a = ax2;
+  } else
+  if (mountType == ALTALT) {
+    while (ax1 >  Deg360) ax1 -= Deg360;
+    while (ax1 < -Deg360) ax1 += Deg360;
+    coord->aa1 = ax1;
+    coord->aa2 = ax2;
   } else {
     while (ax1 >  Deg180) ax1 -= Deg360;
     while (ax1 < -Deg180) ax1 += Deg360;

@@ -12,25 +12,39 @@
 #define SF_STOPPED 0
 #define SF_SLEWING 1
 
+typedef struct StatusSettings {
+ bool soundEnabled;
+} StatusSettings;
+
 class Status {
   public:
     // get mount status ready
     void init();
 
-    // late init once tracking is enabled
-    void ready();
+    // mount status wake on demand
+    void wake();
 
-    bool command(char *reply, char *command, char *parameter, bool *supressFrame, bool *numericReply, CommandError *commandError);
+    bool command(char *reply, char *command, char *parameter, bool *suppressFrame, bool *numericReply, CommandError *commandError);
+
+    // current mount fault/status code for external reporting
+    uint8_t errorCode();
+    bool startupAuthorityTrusted();
 
     // mount status LED flash rate (in ms)
     void flashRate(int period);
 
+    // mount misc. general status indicators
     void general();
 
-    Sound sound;
+    inline void soundAlert() { if (sound.enabled) wake(); sound.alert(); }
+    inline void soundBeep() { if (sound.enabled) wake(); sound.beep(); }
+    inline void soundClick() { if (sound.enabled) wake(); sound.click(); }
+    inline void soundToggleEnable() { sound.enabled = !sound.enabled; }
 
   private:
     uint8_t statusTaskHandle = 0;
+    Sound sound;
+    StatusSettings settings = {false};
 };
 
 extern Status mountStatus;

@@ -8,7 +8,7 @@
 #include "../../lib/tasks/OnTask.h"
 
 #include "../../lib/1wire/1Wire.h"
-#include <DallasTemperature.h>        // my DallasTemperature library https://github.com/hjd1964/Arduino-Temperature-Control-Library
+#include <DallasTemperature.h>        // my Dallas Temperature library https://github.com/hjd1964/Arduino-DS1820-Temperature-Library
 DallasTemperature DS18X20(&oneWire);
 
 #include "../weather/Weather.h"
@@ -93,7 +93,7 @@ void Ds1820::poll() {
 
   if (found) {
     if (index < 0) { requestTime = millis(); if (DS18X20.requestTemperatures(true)) index++; }
-    if ((long)(millis() - requestTime) < 200) return;
+    if (millis() - requestTime < 200U) return;
 
     if (device[index] != (uint64_t)OFF) {
       // loop to read the temperature
@@ -110,7 +110,7 @@ void Ds1820::poll() {
       if (!isnan(temperature)) {
         if (isnan(averageTemperature[index])) averageTemperature[index] = temperature;
         averageTemperature[index] = (averageTemperature[index]*9.0F + temperature)/10.0F;
-        goodUntil[index] = millis() + 30000;
+        goodUntil[index] = millis() + 30000U;
       } else {
         // we must get a reading at least once every 30 seconds otherwise flag the failure with a NAN
         if ((long)(millis() - goodUntil[index]) > 0) averageTemperature[index] = NAN;
