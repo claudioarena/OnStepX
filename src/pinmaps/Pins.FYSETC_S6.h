@@ -6,7 +6,6 @@
 
 // TX2/RX2 (PA2/PA3) is on the Y+ and Z+ end stops and is reserved for GPS (etc, no command channel is associated with this port)
 
-// Serial ports (see Pins.defaults.h for SERIAL_A)
 // Schematic isn't entirely clear, best guess:
 // Serial1 RX1 Pin PB7, TX1 Pin PB6
 // Serial2 RX2 Pin PA3, TX2 Pin PA2
@@ -87,11 +86,17 @@
 #define ADDON_RESET_PIN         PA4              // ESP8266 RST (on EXP2 shared with the DS3234 CS pin)
 
 // The PEC index sense is a logic level input, resets the PEC index on rising edge then waits for 60 seconds before allowing another reset
+#ifndef PEC_SENSE_PIN
 #define PEC_SENSE_PIN           PA1              // PEC Sense, analog or digital (on X+ so it can have 3v3 or 5v on adjacent pin)
+#endif
 
 // The status LED is a two wire jumper with a 10k resistor in series to limit the current to the LED
-#define STATUS_LED_PIN          PC6              // Drain (on EXP2) One could perhaps move these to the RGB leds, there's a header but no +5V present on it.
-#define MOUNT_LED_PIN           PC6              // Drain (on EXP2 shared with Reticle/BME280_CS)
+#ifndef STATUS_LED_PIN
+  #define STATUS_LED_PIN        PC6              // Drain (on EXP2) One could perhaps move these to the RGB leds, there's a header but no +5V present on it.
+#endif
+#ifndef MOUNT_LED_PIN
+  #define MOUNT_LED_PIN         PC6              // Drain (on EXP2 shared with Reticle/BME280_CS)
+#endif
 #ifndef RETICLE_LED_PIN 
   #define RETICLE_LED_PIN       PC7              // Drain (on EXP2 shared with LED2/BME280_CS)
 #endif
@@ -113,24 +118,12 @@
 // Soft SPI bus to stepper drivers
 #if PINMAP == FYSETC_S6_2
   #define SS_MOSI               PE14
-  #define AXIS1_M0_PINPORT     GPIOE
-  #define AXIS1_M0_PINBIT       GPIO_PIN_14
   #define SS_SCK                PE12
-  #define AXIS1_M1_PINPORT      GPIOE
-  #define AXIS1_M1_PINBIT       GPIO_PIN_12
   #define SS_MISO               PE13
-  #define AXIS1_M3_PINPORT      GPIOE
-  #define AXIS1_M3_PINBIT       GPIO_PIN_13
 #else
   #define SS_MOSI               PA7
-  #define AXIS1_M0_PINPORT      GPIOA
-  #define AXIS1_M0_PINBIT       GPIO_PIN_7
   #define SS_SCK                PA5
-  #define AXIS1_M1_PINPORT      GPIOA
-  #define AXIS1_M1_PINBIT       GPIO_PIN_5
   #define SS_MISO               PA6
-  #define AXIS1_M3_PINPORT      GPIOA
-  #define AXIS1_M3_PINBIT       GPIO_PIN_6
 #endif
 
 // Axis1 RA/Azm step/dir driver

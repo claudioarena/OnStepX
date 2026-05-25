@@ -8,7 +8,6 @@
 
 #if defined(ESP32)
 
-// Serial ports (see Pins.defaults.h for SERIAL_A)
 // Serial0: RX Pin GPIO3, TX Pin GPIO1 (to USB serial adapter)
 // Serial1: RX1 Pin GPIO10, TX1 Pin GPIO9 (on SPI Flash pins, must be moved to be used)
 // Serial2: RX2 Pin GPIO13, TX2 Pin GPIO5
@@ -22,9 +21,7 @@
   #define SERIAL_B_TX           5
 #endif
 
-// Specify the ESP32 I2C pins
-#define I2C_SDA_PIN             21
-#define I2C_SCL_PIN             22
+// Uses default ESP32 I2C GPIO21 (SDA) and GPIO22 (SCL)
 
 // The multi-purpose pins (Aux3..Aux8 can be analog pwm/dac if supported)
 #define AUX2_PIN                18               // ESP8266 RST control, or SPI MISO Axis1&2

@@ -46,17 +46,23 @@ class Telescope {
     // update the location for time keeping and coordinate conversion
     void updateSite();
 
-    // handle observatory commands
-    bool command(char reply[], char command[], char parameter[], bool *supressFrame, bool *numericReply, CommandError *commandError);
+    // handle commands
+    bool command(char reply[], char command[], char parameter[], bool *suppressFrame, bool *numericReply, CommandError *commandError);
 
     void statusInit();
+
+    bool ready = false;
+
+    float mcuTemperature;
 
   private:
     Firmware firmware;
     int16_t reticleBrightness = RETICLE_LED_DEFAULT;
 };
 
-extern bool xBusy;            // true during timing sensitive operations (for disabling I2C etc.)
-#define analog8BitToAnalogRange(v) roundf((v/255.0F)*(float)(ANALOG_WRITE_RANGE))
+// true during timing sensitive operations (for disabling I2C etc.)
+extern bool xBusy;
+
+#define analog8BitToAnalogRange(v) ((v)*ANALOG_WRITE_RANGE/255)
 
 extern Telescope telescope;

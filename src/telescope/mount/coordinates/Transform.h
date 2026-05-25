@@ -16,10 +16,17 @@
 // MOUNT      <--> apply pointing model                   <--> OBSERVED    (Transform)
 // OBSERVED   <--> apply refraction                       <--> TOPOCENTRIC (Transform)
 
+// CR_MOUNT for Horizon or Equatorial mount coordinates, depending on the mount type
+// CR_MOUNT_EQU for Equatorial mount coordinates
+// CR_MOUNT_ALT for altitude (a) and Horizon or Equatorial mount coordinates
+// CR_MOUNT_HOR for Horizon mount coordinates
+// CR_MOUNT_ALL for both Equatorial and Horizon mount coordinates
+enum CoordReturn: uint8_t {CR_MOUNT, CR_MOUNT_EQU, CR_MOUNT_ALT, CR_MOUNT_HOR, CR_MOUNT_ALL};
+
 class Transform {
   public:
     // setup for coordinate transformation
-    void init();
+    void init(uint8_t mountType);
 
     #if DEBUG != OFF
       // prints a coordinate to the debug serial port
@@ -63,8 +70,17 @@ class Transform {
     void equToHor(Coordinate *coord);
     // converts from Equatorial (h,d) to Horizon (a) altitude coordinate
     void equToAlt(Coordinate *coord);
-    // converts from Equatorial (h,d) to Horizon (a,z) coordinates
+    // converts from Horizon (a,z) to Equatorial (h,d) coordinates
     void horToEqu(Coordinate *coord);
+
+    // converts from AltAlt (aa1,aa2) to Horizon (a,z) coordinates
+    void aaToHor(Coordinate *coord);
+    // converts from Horizon (a,z) to AltAlt (aa1,aa2) coordinates
+    void horToAa(Coordinate *coord);
+    // converts from AltAlt (aa1,aa2) to Equatorial (h,d) coordinates
+    void aaToEqu(Coordinate *coord) { aaToHor(coord); horToEqu(coord); };
+    // converts from equatorial (h,d) to AltAlt (aa1,aa2) coordinates
+    void equToAa(Coordinate *coord) { equToHor(coord); horToAa(coord); };
 
     // refraction at altitude, pressure (millibars), and temperature (celsius)
     // returns amount of refraction at the true altitude
@@ -73,9 +89,13 @@ class Transform {
     // returns the amount of refraction at the apparent altitude
     double apparentRefrac(double altitude);
 
+    // flag if this mount is equatorial or not
+    bool isEquatorial() { return mountType == GEM || mountType == FORK; };
+
     #if ALIGN_MAX_NUM_STARS > 1  
       GeoAlign align;
     #endif
+
     int8_t mountType = MOUNT_SUBTYPE;
     bool meridianFlips;
  

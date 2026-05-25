@@ -7,6 +7,7 @@
 
 #if AXIS1_PEC == ON
   #include "../../../lib/tasks/OnTask.h"
+  #include "../../../lib/nv/Nv.h"
 
   #include "../../../lib/sense/Sense.h"
   #include "../../Telescope.h"
@@ -14,7 +15,7 @@
   #include "../guide/Guide.h"
   #include "../park/Park.h"
 
-  #if PEC_SENSE == OFF
+  #if (PEC_SENSE) == OFF
     bool wormSenseFirst = true;
   #else
     bool wormSenseFirst = false;
@@ -23,50 +24,60 @@
   inline void pecWrapper() { pec.poll(); }
 
   void Pec::init() {
-    // confirm the data structure size
-    if (PecSettingsSize < sizeof(PecSettings)) { nv.initError = true; DL("ERR: Pec::init(), PecSettingsSize error"); }
+    nvKey = nv().kv().computeKey("PEC_SETTINGS");
+    if (!nv().kv().getOrInit(nvKey, settings)) { DLF("WRN: Nv, init failed for PEC_SETTINGS"); }
 
-    // write the default settings to NV
-    if (!nv.hasValidKey()) {
-      VLF("MSG: Mount, PEC writing defaults to NV");
-      nv.writeBytes(NV_MOUNT_PEC_BASE, &settings, sizeof(PecSettings));
+    settings.recorded = constrain(settings.recorded, false, true);
+    settings.state = constrain(settings.state, PEC_NONE, PEC_RECORD);
+    settings.wormRotationSteps = constrain(settings.wormRotationSteps, 0, 129600000);
+
+    NvVolume& nvVolume = nv().volume();
+    if (!nvVolume.isMounted()) {
+      DLF("WRN: Pec::init(); NV volume not mounted");
+      return;
     }
 
-    // read the settings
-    nv.readBytes(NV_MOUNT_PEC_BASE, &settings, sizeof(PecSettings));
+    // Bind IvPartition to the PEC partition by name.
+    if (nvIv.init(nvVolume, "PEC")) {
+      VLF("MSG: Nv, partition 'PEC' mounted");
+    } else {
+      DLF("WRN: Pec::init(); can't find PEC partition!");
+      return;
+    }
 
-    stepsPerSiderealSecond = (axis1.getStepsPerMeasure()/RAD_DEG_RATIO_F)/240.0F;
+    stepsPerSiderealSecond = (axis1.getStepsPerMeasure()/RAD_DEG_RATIO)/240.0L;
     stepsPerSiderealSecondI = lroundf(stepsPerSiderealSecond);
-    stepsPerSiderealFrac = (stepsPerSiderealSecond*SIDEREAL_RATIO_F)/FRACTIONAL_SEC;
+    stepsPerMicroSecond = (stepsPerSiderealSecond*SIDEREAL_RATIO)/1000000.0L;
 
     wormRotationSeconds = round(settings.wormRotationSteps/stepsPerSiderealSecond);
     bufferSize = wormRotationSeconds;
 
     if (bufferSize > 0) {
       if (bufferSize < 61) {
+        DLF("WRN: Pec::init(), invalid bufferSize (minimum worm rotation 61 seconds)");
         bufferSize = 0;
         initError.value = true;
-        DLF("ERR: Pec::init(), invalid bufferSize - PEC disabled");
       } else
-      if (bufferSize + NV_PEC_BUFFER_BASE >= nv.size - 1) {
+      if (bufferSize > nvIv.sizeBytes()) {
+        DLF("WRN: Pec::init(), bufferSize exceeds PEC partition size - PEC disabled");
         bufferSize = 0;
         initError.value = true;
-        DLF("ERR: Pec::init(), bufferSize exceeds available NV - PEC disabled");
       } else {
         buffer = (int8_t*)malloc(bufferSize * sizeof(*buffer));
         if (buffer == NULL) {
           bufferSize = 0;
           initError.value = true;
-          VLF("WRN: Pec::init(), bufferSize exceeds available RAM - PEC disabled");
+          DLF("WRN: Pec::init(), bufferSize exceeds available RAM - PEC disabled");
         } else {
           VF("MSG: Mount, PEC allocated buffer "); V(bufferSize * (long)sizeof(*buffer)); VLF(" bytes");
 
           bool bufferNeedsInit = true;
-          for (int i = 0; i < bufferSize; i++) {
-            buffer[i] = nv.read(NV_PEC_BUFFER_BASE + i);
-            if (buffer[i] != 0) bufferNeedsInit = false;
+          nvIv.readBytes(0, buffer, bufferSize);
+          for (int i = 0; i < bufferSize; i++) { if (buffer[i] != 0) bufferNeedsInit = false; }
+          if (bufferNeedsInit) {
+            for (int i = 0; i < bufferSize; i++) buffer[i] = 0; 
+            nvIv.writeBytes(0, buffer, bufferSize);
           }
-          if (bufferNeedsInit) for (int i = 0; i < bufferSize; i++) nv.write(NV_PEC_BUFFER_BASE + i, (int8_t)0);
 
           if (settings.state > PEC_RECORD) {
             settings.state = PEC_NONE;
@@ -76,7 +87,7 @@
 
           if (!settings.recorded) settings.state = PEC_NONE;
 
-          #if PEC_SENSE == OFF
+          #if (PEC_SENSE) == OFF
             #if GOTO_FEATURE == ON
               park.settings.wormSensePositionSteps = 0;
             #endif
@@ -106,7 +117,7 @@
     // keep track of our current step position, and when the step position on the worm wraps during playback
     long axis1Steps = axis1.getMotorPositionSteps();
 
-    #if PEC_SENSE == OFF
+    #if (PEC_SENSE) == OFF
       wormSenseFirst = true;
     #else
       static int lastState;
@@ -114,7 +125,11 @@
       wormIndexState = sense.isOn(senseHandle);
 
       // digital or analog pec sense, with 60 second delay before redetect
-      long dist; if (wormSenseSteps > axis1Steps) dist = wormSenseSteps - axis1Steps; else dist = axis1Steps - wormSenseSteps;
+      long dist;
+      if (wormSenseSteps > axis1Steps) dist = wormSenseSteps - axis1Steps; else dist = axis1Steps - wormSenseSteps;
+
+      if (wormIndexSenseThisSecond && dist > stepsPerSiderealSecond*2.0) wormIndexSenseThisSecond = false;
+
       if (dist > stepsPerSiderealSecond*60.0 && wormIndexState != lastState && wormIndexState == true) {
         VLF("MSG: Mount, PEC index detected");
         wormSenseSteps = axis1Steps;
@@ -123,21 +138,22 @@
         wormIndexSenseThisSecond = true;
       } else bufferStart = false;
 
-      if (wormIndexSenseThisSecond && dist > stepsPerSiderealSecond) wormIndexSenseThisSecond = false;
     #endif
 
     if (settings.state == PEC_NONE) { rate = 0.0F; return; }
     if (!wormSenseFirst) return;
 
     // worm step position corrected for any index found
-    #if PEC_SENSE == OFF
+    #if (PEC_SENSE) == OFF
       static long lastWormRotationSteps = wormRotationSteps;
     #endif
     wormRotationSteps = axis1Steps - wormSenseSteps;
-    wormRotationSteps = ((wormRotationSteps % settings.wormRotationSteps) + settings.wormRotationSteps) % settings.wormRotationSteps;
-    #if PEC_SENSE == OFF
+    while (wormRotationSteps >= settings.wormRotationSteps) wormRotationSteps -= settings.wormRotationSteps;
+    while (wormRotationSteps < 0) wormRotationSteps += settings.wormRotationSteps;
+
+    #if (PEC_SENSE) == OFF
       if (wormRotationSteps - lastWormRotationSteps < 0) {
-        VLF("MSG: Mount, virtual index detected");
+        VLF("MSG: Mount, PEC virtual index detected");
         bufferStart = true;
       } else bufferStart = false;
     #endif
@@ -151,7 +167,7 @@
     if (settings.state == PEC_READY_PLAY) {
       // makes sure the index is at the start of a second before resuming play
       if ((long)fmod(wormRotationSteps, stepsPerSiderealSecond) == 0) {
-        VLF("MSG: Mount, started PEC playing");
+        VLF("MSG: Mount, PEC started playing");
         settings.state = PEC_PLAY;
         bufferIndex = lroundf(wormRotationSteps/stepsPerSiderealSecond);
         wormRotationStartTimeFs = lastFs;
@@ -160,7 +176,7 @@
     // start recording PEC
     if (settings.state == PEC_READY_RECORD) {
       if ((long)fmod(wormRotationSteps, stepsPerSiderealSecond) == 0) {
-        VF("MSG: Mount, started PEC recording at ");
+        VF("MSG: Mount, PEC started recording at ");
         settings.state = PEC_RECORD;
         bufferIndex = lroundf(wormRotationSteps/stepsPerSiderealSecond);
         firstRecording = !settings.recorded;
@@ -168,7 +184,7 @@
         V(wormRotationStartTimeFs);
         recordStopTimeFs = wormRotationStartTimeFs + (uint32_t)(wormRotationSeconds*(long)FRACTIONAL_SEC);
         V(" and stopping at "); VL(recordStopTimeFs);
-        accGuideAxis1 = 0.0F;
+        accGuideAxis1 = 0.0L;
       }
     } else
     // and once the PEC data is all stored, indicate that it's valid and start using it
@@ -191,7 +207,11 @@
     bufferIndex = ((bufferIndex % wormRotationSeconds) + wormRotationSeconds) % wormRotationSeconds;
 
     // accumulate guide steps for PEC
-    if (guide.rateAxis1 != 0.0F) { accGuideAxis1 += stepsPerSiderealFrac*guide.rateAxis1; }
+    if (guide.rateAxis1 != 0.0F) {
+      if (accGuideStartTime != 0) accGuideAxis1 += stepsPerMicroSecond*(micros() - accGuideStartTime)*guide.rateAxis1;
+      accGuideStartTime = micros();
+      if (accGuideStartTime == 0) accGuideStartTime = 1;
+    } else accGuideStartTime = 0;
 
     // falls in whenever the pecIndex changes, which is once a sidereal second
     static long lastBufferIndex = 0;
@@ -241,13 +261,13 @@
     if (settings.state == PEC_RECORD || settings.state == PEC_READY_RECORD) {
       VLF("MSG: Mount, PEC recording stopped");
       settings.state = PEC_NONE;
-      rate = 0.0;
+      rate = 0.0F;
     } 
     // get ready to re-index when tracking comes back
     if (settings.state == PEC_PLAY) {
       VLF("MSG: Mount, PEC playing paused");
       settings.state = PEC_READY_PLAY;
-      rate = 0.0;
+      rate = 0.0F;
     } 
   }
 

@@ -1,7 +1,16 @@
 // Flashes an esp8266 based SWS on the SERIAL_PASSTHROUGH interface by passing data to/from SERIAL_A
 
 #include "AddonFlasher.h"
+
 #include "../../lib/tasks/OnTask.h"
+#include "../../lib/gpioEx/GpioEx.h"
+
+#if SERIAL_PASSTHROUGH == HardSerial
+#define SERIAL_PASSTHROUGH_RXTX_SET
+extern HardwareSerial HWSerialB;
+#undef SERIAL_PASSTHROUGH
+#define SERIAL_PASSTHROUGH HWSerialB
+#endif
 
 // ADDON_TRIGR_PIN  HIGH for run and LOW for trigger serial passthrough mode
 // ADDON_RESET_PIN  HIGH for run and LOW for reset
@@ -34,7 +43,7 @@
     VLF("MSG: AddonFlasher, activating serial passthrough...");
 
     // so we have a total of 1.5 minutes to start the upload
-    unsigned long lastRead = millis() + 85000;
+    unsigned long lastRead = millis() + 85000U;
     while (true) {
       // read from port 1, send to port 0:
       if (SERIAL_PASSTHROUGH.available()) {
@@ -50,12 +59,12 @@
         delayMicroseconds(5);
         SERIAL_PASSTHROUGH.write(inByte);
         delayMicroseconds(5);
-        if (millis() > lastRead) lastRead = millis();
+        if ((long)(millis() - lastRead > 0)) lastRead = millis();
       }
       //tasks.yield();
 
-      // wait 5 seconds w/no traffic before resuming normal operation
-      if (timeout && (long)(millis() - lastRead) > 5000) break;
+      // wait 30 seconds w/no traffic before resuming normal operation
+      if (timeout && (millis() - lastRead > 30000U)) break;
     }
     VLF("MSG: AddonFlasher, serial passthrough deactivated");
 
@@ -109,11 +118,11 @@
 
   void AddonFlasher::reset() {
     // reset LOW (active) HIGH (inactive)
-    tasks.yield(20);
+    tasks.yield(200);
     digitalWriteEx(ADDON_RESET_PIN, LOW);
-    tasks.yield(20);
+    tasks.yield(200);
     digitalWriteEx(ADDON_RESET_PIN, HIGH);
-    tasks.yield(20);
+    tasks.yield(200);
   }
 
   void AddonFlasher::poll() {

@@ -6,6 +6,7 @@
 #if defined(MOUNT_PRESENT)
 
 #include "../../../lib/tasks/OnTask.h"
+#include "../../../lib/nv/Nv.h"
 
 #include "../../Telescope.h"
 #include "../Mount.h"
@@ -21,17 +22,13 @@ inline void gotoWrapper() { goTo.poll(); }
 #endif
 
 void Goto::init() {
-  // confirm the data structure size
-  if (GotoSettingsSize < sizeof(GotoSettings)) { nv.initError = true; DLF("ERR: Goto::init(), GotoSettingsSize error"); }
 
-  // write the default settings to NV
-  if (!nv.hasValidKey()) {
-    VLF("MSG: Mount, goto writing defaults to NV");
-    nv.writeBytes(NV_MOUNT_GOTO_BASE, &settings, sizeof(GotoSettings));
-  }
+  nvKey = nv().kv().computeKey("GOTO_SETTINGS");
+  if (!nv().kv().getOrInit(nvKey, settings)) { DLF("WRN: Nv, init failed for GOTO_SETTINGS"); }
 
-  // read the settings
-  nv.readBytes(NV_MOUNT_GOTO_BASE, &settings, sizeof(GotoSettings));
+  settings.meridianFlipAuto = constrain(settings.meridianFlipAuto, false, true);
+  settings.meridianFlipPause = constrain(settings.meridianFlipPause, false, true);
+  settings.preferredPierSide = constrain(settings.preferredPierSide, PSS_NONE, PSS_SAME_ONLY);
 
   // force defaults if needed
   #if MFLIP_PAUSE_HOME_MEMORY != ON
@@ -54,10 +51,19 @@ void Goto::init() {
     usPerStepBase = 1000000.0F/((axis1.getStepsPerMeasure()/RAD_DEG_RATIO)*1.0F);
     settings.usPerStepCurrent = usPerStepBase;
   #endif
+
+  settings.usPerStepCurrent = constrain(settings.usPerStepCurrent, usPerStepBase/2.0F, usPerStepBase*2.0F);
   if (usPerStepBase < usPerStepLowerLimit()) usPerStepBase = usPerStepLowerLimit()*2.0F;
   if (settings.usPerStepCurrent > 1000000.0F) settings.usPerStepCurrent = usPerStepBase;
   if (settings.usPerStepCurrent < usPerStepBase/2.0F) settings.usPerStepCurrent = usPerStepBase/2.0F;
   if (settings.usPerStepCurrent > usPerStepBase*2.0F) settings.usPerStepCurrent = usPerStepBase*2.0F;
+
+  axis1.setFrequencyMax(((1000000.0F/usPerStepBase)/axis1.getStepsPerMeasure())*2.0F);
+  axis2.setFrequencyMax(((1000000.0F/usPerStepBase)/axis2.getStepsPerMeasure())*2.0F);
+
+  absoluteEncodersPresent = axis1.motor->hasAbsoluteEncoder() || axis2.motor->hasAbsoluteEncoder();
+  if (AXIS1_HOME_TOLERANCE != 0.0F || AXIS2_HOME_TOLERANCE != 0.0F ||
+      AXIS1_TARGET_TOLERANCE != 0.0F || AXIS2_TARGET_TOLERANCE != 0.0F || absoluteEncodersPresent) encodersPresent = true;
 
   updateAccelerationRates();
 }
@@ -71,6 +77,10 @@ CommandError Goto::request() {
 
 // goto equatorial position (Native or Mount coordinate system)
 CommandError Goto::request(Coordinate coords, PierSideSelect pierSideSelect, bool native) {
+  if (!mount.startupAuthorityTrusted()) {
+    DLF("WRN: Mount, goto rejected because startup authority is not trusted");
+    return CE_SLEW_ERR_UNSPECIFIED;
+  }
 
   if (native) {
     coords.pierSide = PIER_SIDE_NONE;
@@ -78,63 +88,95 @@ CommandError Goto::request(Coordinate coords, PierSideSelect pierSideSelect, boo
   }
 
   CommandError e = setTarget(&coords, pierSideSelect);
-  if (e == CE_SLEW_IN_SLEW) { stop(); return e; }
+  if (e == CE_SLEW_IN_SLEW) { abort(); return e; }
   if (e != CE_NONE) return e;
 
-  // handle special case of a tangent arm mount
-  #if AXIS2_TANGENT_ARM == ON
+  lastAlignTarget = target;
+
+  #if AXIS1_SECTOR_GEAR == ON || AXIS2_TANGENT_ARM == ON
     double a1, a2;
-    transform.mountToInstrument(&target, &a1, &a2);
-    a2 = a2 - axis2.getIndexPosition();
-    if (a2 < axis2.settings.limits.min) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-    if (a2 > axis2.settings.limits.max) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+
+    // handle special case of a sector gear RA
+    #if AXIS1_SECTOR_GEAR == ON
+      transform.mountToInstrument(&target, &a1, &a2);
+      a1 = a1 - axis1.getIndexPosition();
+      if (a1 < axis1.getLimitMin()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+      if (a1 > axis1.getLimitMax()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+    #endif
+
+    // handle special case of a tangent arm Dec
+    #if AXIS2_TANGENT_ARM == ON
+      transform.mountToInstrument(&target, &a1, &a2);
+      a2 = a2 - axis2.getIndexPosition();
+      if (a2 < axis2.getLimitMin()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+      if (a2 > axis2.getLimitMax()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+    #endif
   #endif
 
   limits.enabled(true);
-  mount.syncToEncoders(false);
-  if (mount.isHome()) mount.tracking(true);
+  mount.syncFromOnStepToEncoders = false;
+  if (firstGoto) {
+    mount.tracking(true);
+    firstGoto = false;
+  }
   guide.backlashEnableControl(true);
 
-  // allow slewing near target for Eq modes if not too close to the poles
+  // allow slewing near target for Eq modes but disable for alt/az, parking, homing if encoders are not present
+  nearDestinationRefineStages = 0;
   slewDestinationDistHA = 0.0;
   slewDestinationDistDec = 0.0;
-  if (transform.mountType != ALTAZM && 
-      park.state != PS_PARKING &&
-      home.state != HS_HOMING &&
-      fabs(target.d) < Deg90 - degToRad(GOTO_OFFSET)) {
-    slewDestinationDistHA = degToRad(GOTO_OFFSET);
-    slewDestinationDistDec = degToRad(GOTO_OFFSET);
-    if (target.pierSide == PIER_SIDE_WEST) slewDestinationDistDec = -slewDestinationDistDec;
+  if ((encodersPresent || (park.state != PS_PARKING && home.state != HS_HOMING))) {
+    nearDestinationRefineStages = GOTO_REFINE_STAGES;
+    if (transform.isEquatorial()) { 
+      slewDestinationDistHA = degToRad(GOTO_OFFSET);
+      slewDestinationDistDec = degToRad(GOTO_OFFSET);
+      if (target.pierSide == PIER_SIDE_WEST) slewDestinationDistDec = -slewDestinationDistDec;
+    }
   }
 
   // prepare for goto
   Coordinate current = mount.getMountPosition(CR_MOUNT_HOR);
   state = GS_GOTO;
-  stage = GG_NEAR_DESTINATION;
+  stage = GG_NEAR_DESTINATION_START;
   start = current;
   destination = target;
-  nearDestinationRefineStages = 1;
 
   // add waypoint if needed
-  if (transform.mountType != ALTAZM && MFLIP_SKIP_HOME == OFF && start.pierSide != destination.pierSide) {
+  if (transform.isEquatorial() && MFLIP_SKIP_HOME == OFF && start.pierSide != destination.pierSide) {
     VLF("MSG: Mount, goto changes pier side, setting waypoint at home");
     waypoint(&current);
   }
+
+  // allow goto and enable tracking after any of the limits below are exceeded
+  // typically these are triggered by tracking into the relevant limit and
+  // a goto is safe since it should always move away from the limit else it wouldn't be allowed
+  // finally I enabling tracking again since that allows for easy recovery
+  #if LIMIT_RECOVERY == ON
+    if (limits.isBelowHorizon() || limits.isPastMeridianW() || limits.isPastAxis1Max()) {
+      limits.limitsDisablePeriod(1.0F);
+      #if LIMIT_RECOVERY_WITH_TRACKING == ON
+        if (home.state != HS_HOMING && park.state != PS_PARKING) mount.tracking(true);
+      #endif
+    }
+  #endif
 
   // start the goto monitor
   if (taskHandle != 0) tasks.remove(taskHandle);
   taskHandle = tasks.add(0, 0, true, 3, gotoWrapper, "MntGoto");
   if (taskHandle) {
     VLF("MSG: Mount, create goto monitor task (idle, priority 3)... success");
-    VLF("MSG: Mount, starting goto");
+    VLF("MSG: Mount, attempting goto");
 
     e = startAutoSlew();
-    if (e != CE_NONE) return e;
+    if (e != CE_NONE) {
+      VF("MSG: Mount, goto failed with error "); VL(e);
+      return e;
+    }
 
     tasks.setPeriodMicros(taskHandle, FRACTIONAL_SEC_US);
     VF("MSG: Mount, goto monitor task set rate "); V(FRACTIONAL_SEC_US); VL("us");
 
-    mountStatus.sound.alert();
+    mountStatus.soundAlert();
 
   } else { DLF("WRN: Mount, start goto monitor task... FAILED!"); }
 
@@ -144,17 +186,9 @@ CommandError Goto::request(Coordinate coords, PierSideSelect pierSideSelect, boo
 
 // sync replaces goto to equatorial position (Native or Mount coordinate system) when GOTO_FEATURE is OFF
 CommandError Goto::request(Coordinate coords, PierSideSelect pierSideSelect, bool native) {
-  mountStatus.sound.alert();
+  mountStatus.soundAlert();
 
-  CommandError result = requestSync(coords, pierSideSelect, native);
-
-  // check if parking and mark as finished or unparked as needed
-  if (park.state == PS_PARKING) park.requestDone();
-
-  // check if homing
-  if (home.state == HS_HOMING) home.requestDone();
-
-  return result;
+  return requestSync(coords, pierSideSelect, native);
 }
 #endif
 
@@ -165,6 +199,10 @@ CommandError Goto::requestSync() {
 
 // sync to equatorial position (Native or Mount coordinate system)
 CommandError Goto::requestSync(Coordinate coords, PierSideSelect pierSideSelect, bool native) {
+  if (!mount.startupAuthorityTrusted()) {
+    DLF("WRN: Mount, sync rejected because startup authority is not trusted");
+    return CE_SLEW_ERR_UNSPECIFIED;
+  }
   
   if (native) {
     coords.pierSide = PIER_SIDE_NONE;
@@ -178,11 +216,18 @@ CommandError Goto::requestSync(Coordinate coords, PierSideSelect pierSideSelect,
 
   double a1, a2;
   transform.mountToInstrument(&target, &a1, &a2);
-  axis1.setInstrumentCoordinate(a1);
-  axis2.setInstrumentCoordinate(a2);
+  a1 += target.a1Correction;
+
+  e = limits.validateInstrumentCoordinate(1, a1);
+  if (e != CE_NONE) return e;
+  e = limits.validateInstrumentCoordinate(2, a2);
+  if (e != CE_NONE) return e;
+  e = limits.setInstrumentCoordinate(1, a1, true);
+  if (e == CE_NONE) e = limits.setInstrumentCoordinate(2, a2, true);
+  if (e != CE_NONE) return e;
 
   limits.enabled(true);
-  mount.syncToEncoders(true);
+  mount.syncFromOnStepToEncoders = true;
 
   VLF("MSG: Mount, sync instrument coordinates updated");
 
@@ -191,15 +236,18 @@ CommandError Goto::requestSync(Coordinate coords, PierSideSelect pierSideSelect,
 
 // checks for valid target and determines pier side (Mount coordinate system)
 CommandError Goto::setTarget(Coordinate *coords, PierSideSelect pierSideSelect, bool isGoto) {
-
   CommandError e = validate();
-  if (e == CE_SLEW_ERR_IN_STANDBY && mount.isHome()) { mount.enable(true); e = validate(); }
+  if (e == CE_SLEW_ERR_IN_STANDBY && (encodersPresent || mount.isHome())) {
+    mount.enable(true);
+    e = validate();
+  }
   if (e == CE_NONE && isGoto && limits.isAboveOverhead()) e = CE_SLEW_ERR_OUTSIDE_LIMITS;
   if (e != CE_NONE) return e;
 
   target = *coords;
 
-  if (transform.mountType == ALTAZM) transform.horToEqu(&target); else transform.equToHor(&target);
+  if (transform.mountType == ALTAZM) transform.horToEqu(&target); else
+  if (transform.mountType == ALTALT) transform.aaToEqu(&target); else transform.equToHor(&target);
 
   // east side of pier is always the default polar-home position
   // east side of pier - we're in the western sky and the HA's are positive
@@ -207,102 +255,128 @@ CommandError Goto::setTarget(Coordinate *coords, PierSideSelect pierSideSelect, 
 
   Coordinate current = mount.getMountPosition(CR_MOUNT);
 
+  if (!transform.meridianFlips) pierSideSelect = PSS_EAST_ONLY;
+
+  bool pierSideBest = false;
+  if (pierSideSelect == PSS_AUTO) {
+    if (transform.mountType != ALTAZM && transform.mountType != ALTALT) {
+      if (isGoto && (current.h < -Deg90 || current.h > Deg90)) pierSideSelect = PSS_WEST; else pierSideSelect = PSS_EAST;
+    } else pierSideSelect = PSS_BEST;
+  }
+  if (pierSideSelect == PSS_BEST) {
+    if (current.pierSide == PIER_SIDE_WEST) pierSideSelect = PSS_WEST; else pierSideSelect = PSS_EAST;
+    pierSideBest = true;
+  }
+  if (pierSideSelect == PSS_SAME_ONLY) {
+    if (current.pierSide == PIER_SIDE_WEST) pierSideSelect = PSS_WEST_ONLY; else pierSideSelect = PSS_EAST_ONLY;
+  }
+
+  bool eastReachable, westReachable;
+
   target.pierSide = current.pierSide;
-  e = limits.validateTarget(&target);
+  target.a1Correction = 0.0;
+
+  double axis1TargetCorrectionE = 0.0;
+  double axis1TargetCorrectionW = 0.0;
+  e = limits.validateTarget(&target, &eastReachable, &westReachable, &axis1TargetCorrectionE, &axis1TargetCorrectionW, isGoto);
   if (e != CE_NONE) return e;
 
-  if (transform.meridianFlips) {
-    double a1;
-    if (transform.mountType == ALTAZM) a1 = target.z; else a1 = target.h;
+  double a1, a2, a1e, a1w, a2e, a2w;
+  a1 = axis1.getInstrumentCoordinate();
+  a2 = axis2.getInstrumentCoordinate();
 
-    double a1e = a1, a1w = a1;
+  target.pierSide = PIER_SIDE_EAST;
+  transform.mountToInstrument(&target, &a1e, &a2e);
+  a1e += axis1TargetCorrectionE;
 
-    bool pastMeridianE = a1 < -limits.settings.pastMeridianE;
-    bool pastMeridianW = a1 > limits.settings.pastMeridianW;
-    if (pastMeridianE) a1e += Deg360;                          // range 0 to 360 degrees, east of pier
-    if (pastMeridianW) a1w -= Deg360;                          // range 0 to -360 degrees, west of pier
-    bool pastMaxE = a1e > axis1.settings.limits.max;
-    bool pastMinW = a1w < axis1.settings.limits.min;
+  target.pierSide = PIER_SIDE_WEST;
+  transform.mountToInstrument(&target, &a1w, &a2w);
+  a1w += axis1TargetCorrectionW;
 
-    if (mount.isHome()) {
-      VL("MSG: Mount, set target from home");
-      if (transform.mountType == FORK) {
-        if (settings.preferredPierSide == PSS_WEST) target.pierSide = PIER_SIDE_WEST; else target.pierSide = PIER_SIDE_EAST;
-      } else {
-        if (a1 < 0) target.pierSide = PIER_SIDE_WEST; else target.pierSide = PIER_SIDE_EAST;
-      }
+  target.pierSide = current.pierSide;
+
+  VF("MSG: Mount, set-target current axis1 "); V(radToDeg(a1)); VF(" and axis2 "); VL(radToDeg(a2));
+  VF("MSG: Mount, set-target targetE axis1 "); V(radToDeg(a1e)); VF(" and axis2 "); VL(radToDeg(a2e));
+  VF("MSG: Mount, set-target targetW axis1 "); V(radToDeg(a1w)); VF(" and axis2 "); VL(radToDeg(a2w));
+
+  double eastDistance, westDistance;
+  if (dist(a1, a1e) > dist(a2, a2e)) eastDistance = dist(a1, a1e); else eastDistance = dist(a2, a2e);
+  if (dist(a1, a1w) > dist(a2, a2w)) westDistance = dist(a1, a1w); else westDistance = dist(a2, a2w);
+
+  if (mount.isHome() && transform.mountType == GEM) {
+    VLF("MSG: Mount, set-target destination from home based on HA");
+    if (target.h < 0) pierSideSelect = PSS_WEST; else pierSideSelect = PSS_EAST;
+    pierSideBest = true;
+  }
+
+  target.pierSide = PIER_SIDE_NONE;
+
+  if (pierSideSelect == PSS_EAST_ONLY) {
+    VLF("MSG: Mount, set-target using PPS_EAST_ONLY");
+    if (eastReachable) target.pierSide = PIER_SIDE_EAST;
+  } else
+  if (pierSideSelect == PSS_WEST_ONLY) {
+    VLF("MSG: Mount, set-target using PPS_WEST_ONLY");
+    if (westReachable) target.pierSide = PIER_SIDE_WEST;
+  } else
+  if (pierSideSelect == PSS_EAST) {
+    VLF("MSG: Mount, set-target using PPS_EAST");
+    if (westReachable && !eastReachable) target.pierSide = PIER_SIDE_WEST; else
+    if (isGoto && westReachable && pierSideBest && westDistance < eastDistance) {
+      VLF("MSG: Mount, set-target destination in alternate (W) orientation is closer");
+      target.pierSide = PIER_SIDE_WEST; 
     } else
-    if (pierSideSelect == PSS_EAST || pierSideSelect == PSS_EAST_ONLY) {
+    if (eastReachable) target.pierSide = PIER_SIDE_EAST;
+  } else
+  if (pierSideSelect == PSS_WEST) {
+    VLF("MSG: Mount, set-target using PPS_WEST");
+    if (eastReachable && !westReachable) target.pierSide = PIER_SIDE_EAST; else
+    if (isGoto && eastReachable && pierSideBest && eastDistance < westDistance) {
+      VLF("MSG: Mount, set-target destination in normal (E) orientation is closer");
       target.pierSide = PIER_SIDE_EAST;
-      if (pastMeridianE && pastMaxE) {
-        VF("MSG: Mount, set target EAST TO WEST: ");
-        target.pierSide = PIER_SIDE_WEST;
-      } else { VF("MSG: Mount, set target EAST stays EAST: !("); }
-      V(radToDeg(a1)); V(" < "); V(-radToDeg(limits.settings.pastMeridianE)); V(" && "); V(radToDeg(a1e)); V(" > "); V(radToDeg(axis1.settings.limits.max)); VL(")");
-      if (pastMeridianE && !pastMaxE) a1 = a1e;
     } else
-    if (pierSideSelect == PSS_WEST || pierSideSelect == PSS_WEST_ONLY) {
-      target.pierSide = PIER_SIDE_WEST;
-      VLF("MSG: Mount, set target ");
-      if (pastMeridianW && pastMinW) {
-        VF("MSG: Mount, set target WEST TO EAST: (");
-        target.pierSide = PIER_SIDE_EAST;
-      } else { VF("MSG: Mount, set target WEST stays WEST: !(");  }
-      V(radToDeg(a1)); V(" > "); V(radToDeg(limits.settings.pastMeridianW)); V(" && "); V(radToDeg(a1w)); V(" < "); V(radToDeg(axis1.settings.limits.min)); VL(")");
-      if (pastMeridianW && !pastMinW) a1 = a1w;
-    } else
-    if (pierSideSelect == PSS_BEST || pierSideSelect == PSS_SAME_ONLY) {
-      if (current.pierSide == PIER_SIDE_EAST) { 
-        if (pastMeridianE && pastMaxE) {
-          VF("MSG: Mount, set target BEST EAST TO WEST: (");
-          target.pierSide = PIER_SIDE_WEST;
-        } else { VF("MSG: Mount, set target BEST stays EAST: !("); }
-        V(radToDeg(a1)); V(" < "); V(-radToDeg(limits.settings.pastMeridianE)); V(" && "); V(radToDeg(a1e)); V(" > "); V(radToDeg(axis1.settings.limits.max)); VL(")");
-        if (pastMeridianE && !pastMaxE) a1 = a1e;
-      }
-      if (current.pierSide == PIER_SIDE_WEST) {
-          if (pastMeridianW && pastMinW) {
-          VF("MSG: Mount, set target BEST WEST TO EAST: (");
-          target.pierSide = PIER_SIDE_EAST;
-        } else { VF("MSG: Mount, set target BEST stays WEST: !("); }
-        V(radToDeg(a1)); V(" > "); V(radToDeg(limits.settings.pastMeridianW)); V(" && "); V(radToDeg(a1w)); V(" < "); V(radToDeg(axis1.settings.limits.min)); VL(")");
-        if (pastMeridianW && !pastMinW) a1 = a1w;
-      }
-    }
+    if (westReachable) target.pierSide = PIER_SIDE_WEST;
+  }
 
-    if (target.pierSide == PIER_SIDE_EAST) {
-      VF("MSG: Mount, set target final EAST (a1="); V(radToDeg(a1)); VL(")");
-    } else
-    if (target.pierSide == PIER_SIDE_WEST) {
-      VF("MSG: Mount, set target final WEST (a1="); V(radToDeg(a1)); VL(")");
-    }
+  if (target.pierSide == PIER_SIDE_NONE) {
+    VLF("MSG: Mount, set-target destination outside limits");
+    return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  }
 
-    if (transform.mountType == ALTAZM) target.z = a1; else target.h = a1;
+  VF("MSG: Mount, set-target destination ");
+  if (current.pierSide == PIER_SIDE_NONE) { VF("NONE"); } else
+  if (current.pierSide == PIER_SIDE_EAST) { VF("EAST"); } else
+  if (current.pierSide == PIER_SIDE_WEST) { VF("WEST"); } else { VF("?"); }
+  if (current.pierSide == target.pierSide) { VF(" stays "); } else { VF(" to "); }
+  if (target.pierSide == PIER_SIDE_NONE) { VLF("NONE"); } else
+  if (target.pierSide == PIER_SIDE_EAST) { VLF("EAST"); } else
+  if (target.pierSide == PIER_SIDE_WEST) { VLF("WEST"); } else { VLF("?"); }
 
-    if (pierSideSelect == PSS_EAST_ONLY && target.pierSide != PIER_SIDE_EAST) return CE_SLEW_ERR_OUTSIDE_LIMITS; else
-    if (pierSideSelect == PSS_WEST_ONLY && target.pierSide != PIER_SIDE_WEST) return CE_SLEW_ERR_OUTSIDE_LIMITS; else
-    if (pierSideSelect == PSS_SAME_ONLY && target.pierSide != current.pierSide) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  } else {
+  if (target.pierSide != PIER_SIDE_EAST && target.pierSide != PIER_SIDE_WEST) {
+    VLF("MSG: Mount, set-target destination pier side defaults to EAST");
     target.pierSide = PIER_SIDE_EAST;
   }
 
-  if (target.pierSide != PIER_SIDE_WEST) target.pierSide = PIER_SIDE_EAST;
+  // adjust Axis1 coordinate range as needed to allow going past +/-180 degrees
+  if (target.pierSide == PIER_SIDE_EAST) target.a1Correction = axis1TargetCorrectionE;
+  if (target.pierSide == PIER_SIDE_WEST) target.a1Correction = axis1TargetCorrectionW;
 
-  if (transform.mountType == ALTAZM) transform.horToEqu(&target); else transform.equToHor(&target);
+  transform.observedPlaceToMount(&target);
+  if (transform.mountType == ALTAZM) transform.horToEqu(&target); else
+  if (transform.mountType == ALTALT) transform.aaToEqu(&target); else transform.equToHor(&target);
+
   transform.hourAngleToRightAscension(&target, false);
 
   return CE_NONE;
 }
 
 // stop any presently active goto
-void Goto::stop() {
+void Goto::abort() {
   if (state == GS_GOTO && stage > GG_READY_ABORT) stage = GG_READY_ABORT;
 }
 
 // general status checks ahead of sync or goto
 CommandError Goto::validate() {
-  if (axis1.fault())           return CE_SLEW_ERR_HARDWARE_FAULT;
-  if (axis2.fault())           return CE_SLEW_ERR_HARDWARE_FAULT;
   if (!axis1.isEnabled())      return CE_SLEW_ERR_IN_STANDBY;
   if (!axis2.isEnabled())      return CE_SLEW_ERR_IN_STANDBY;
   if (park.state == PS_PARKED) return CE_SLEW_ERR_IN_PARK;
@@ -310,11 +384,12 @@ CommandError Goto::validate() {
   if (guide.state != GU_NONE)  return CE_SLEW_IN_MOTION;
   if (mount.isSlewing())       return CE_SLEW_IN_MOTION;
   if (limits.isGotoError())    return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (mount.motorFault())      return CE_SLEW_ERR_HARDWARE_FAULT;
   return CE_NONE;
 }
 
 // add an align star (at the current position relative to target)
-CommandError Goto::alignAddStar() {
+CommandError Goto::alignAddStar(bool sync) {
   if (alignState.currentStar > alignState.lastStar) return CE_PARAM_RANGE;
 
   CommandError e = CE_NONE;
@@ -324,20 +399,27 @@ CommandError Goto::alignAddStar() {
     #if ALIGN_MAX_NUM_STARS > 1  
       transform.align.init(transform.mountType, site.location.latitude);
     #endif
-    e = requestSync(gotoTarget, settings.preferredPierSide);
+    e = requestSync(gotoTarget, PSS_SAME_ONLY);
+    lastAlignTarget = mount.getMountPosition(CR_MOUNT_ALL);
+    transform.hourAngleToRightAscension(&lastAlignTarget, true);
   }
 
   // add an align star
   if (e == CE_NONE) {
     Coordinate mountPosition = mount.getMountPosition(CR_MOUNT_ALL);
+    if (sync) { lastAlignTarget = gotoTarget; }
 
     // update the targets HA and Horizon coords as necessary
-    transform.rightAscensionToHourAngle(&target, true);
-    if (transform.mountType == ALTAZM) transform.equToHor(&target);
+    transform.rightAscensionToHourAngle(&lastAlignTarget, true);
+    if (transform.mountType == ALTAZM) transform.equToHor(&lastAlignTarget); else
+    if (transform.mountType == ALTALT) transform.equToAa(&lastAlignTarget);
 
     #if ALIGN_MAX_NUM_STARS > 1
-      e = transform.align.addStar(alignState.currentStar, alignState.lastStar, &target, &mountPosition);
+      e = transform.align.addStar(alignState.currentStar, alignState.lastStar, &lastAlignTarget, &mountPosition);
+    #else
+      UNUSED(mountPosition);
     #endif
+
     if (e == CE_NONE) alignState.currentStar++;
   }
 
@@ -363,10 +445,10 @@ void Goto::waypoint(Coordinate *current) {
   stage = GG_WAYPOINT_HOME;
 
   // default goes straight to the home position
-  destination = home.position;
+  destination = home.getPosition(CR_MOUNT);
 
   // if the home position is at 0 hours, we're done
-  if (home.position.h == 0.0) return;
+  if (destination.h == 0.0) return;
 
   double d60 = degToRad(120);
   double d45 = degToRad(135);
@@ -390,7 +472,9 @@ void Goto::waypoint(Coordinate *current) {
 
 // monitor goto
 void Goto::poll() {
-  if (stage == GG_READY_ABORT) {
+  // abort if either axis encounters a limit
+  if (stage != GG_ABORT &&
+      (stage == GG_READY_ABORT || axis1.motionError(DIR_BOTH) || axis2.motionError(DIR_BOTH))) {
     VLF("MSG: Mount, goto abort requested");
     stage = GG_ABORT;
     meridianFlipHome.paused = false;
@@ -399,11 +483,29 @@ void Goto::poll() {
     axis2.autoSlewAbort();
   }
 
+  const unsigned long now = millis();
+
+  // abort any goto that might hang!
+  if (axis1.isSlewing()) {
+    if (!axis1.nearTarget()) nearTargetTimeoutAxis1 = now;
+    if (now - nearTargetTimeoutAxis1 > 15000U) {
+      DLF("WRN: Mount, goto axis1 timed out aborting slew!");
+      axis1.autoSlewAbort();
+    }
+  }
+  if (axis2.isSlewing()) {
+    if (!axis2.nearTarget()) nearTargetTimeoutAxis2 = now;
+    if (now - nearTargetTimeoutAxis2 > 15000U) {
+      DLF("WRN: Mount, goto axis2 timed out aborting slew!");
+      axis2.autoSlewAbort();
+    }
+  }
+
   if (!mount.isSlewing()) {
     if (stage == GG_WAYPOINT_AVOID) {
       VLF("MSG: Mount, goto waypoint reached");
       stage = GG_WAYPOINT_HOME;
-      destination = home.position;
+      destination = home.getPosition(CR_MOUNT);
       startAutoSlew();
     } else
 
@@ -413,16 +515,30 @@ void Goto::poll() {
       meridianFlipHome.resume = false;
 
       VLF("MSG: Mount, goto home reached");
-      stage = GG_NEAR_DESTINATION;
+      stage = GG_NEAR_DESTINATION_START;
       destination = target;
       startAutoSlew();
     } else
 
-    if (stage == GG_NEAR_DESTINATION) {
-      if (slewDestinationDistHA != 0.0 || transform.mountType == ALTAZM) {
+    if (stage == GG_NEAR_DESTINATION_START) {
+      if (nearDestinationRefineStages >= 1) {
+        VLF("MSG: Mount, goto near destination wait started");
+        nearDestinationTimeout = now + GOTO_SETTLE_TIME;
+        stage = GG_NEAR_DESTINATION_WAIT;
+      } else stage = GG_NEAR_DESTINATION;
+    } else
 
-        if (transform.mountType != ALTAZM || !nearDestinationRefineStages) stage = GG_DESTINATION;
-        nearDestinationRefineStages--;
+    if (stage == GG_NEAR_DESTINATION_WAIT) {
+      if ((long)(now - nearDestinationTimeout) > 0) {
+        VLF("MSG: Mount, goto near destination wait done");
+        stage = GG_NEAR_DESTINATION;
+      }
+    } else
+
+    if (stage == GG_NEAR_DESTINATION) {
+      if (nearDestinationRefineStages >= 1) {
+
+        if (--nearDestinationRefineStages) stage = GG_NEAR_DESTINATION_START; else stage = GG_DESTINATION;
 
         VLF("MSG: Mount, goto near destination reached");
         destination = target;
@@ -442,6 +558,10 @@ void Goto::poll() {
       state = GS_NONE;
       mount.update();
 
+      // back to normal motor frequencies
+      axis1.setFrequencyScale(1.0F);
+      axis2.setFrequencyScale(1.0F);
+
       // kill this monitor
       tasks.setDurationComplete(taskHandle);
       taskHandle = 0;
@@ -460,9 +580,50 @@ void Goto::poll() {
       // reset goto stage
       stage = GG_NONE;
 
-      mountStatus.sound.alert();
+      mountStatus.soundAlert();
 
       return;
+    }
+  }
+
+  // adjust rates near the horizon to help avoid exceeding the minimum altitude limit
+  if (transform.isEquatorial() && MOUNT_HORIZON_AVOIDANCE == ON) {
+    if (site.locationEx.latitude.absval > degToRad(10.0)) {
+      static float last_a2 = 0;
+      Coordinate coords = mount.getMountPosition(CR_MOUNT_ALT);
+      float a2 = site.locationEx.latitude.sign*coords.d;
+
+      // range 0.2 to 1.0, where a larger distance has less slowdown effect
+      float slowdownFactor = radToDeg(coords.a - limits.settings.altitude.min)/(SLEW_ACCELERATION_DIST*2.0);
+
+      // constrain
+      if (slowdownFactor > 1.0F) slowdownFactor = 1.0F;
+      if (slowdownFactor < 0.2F) slowdownFactor = 0.2F;
+
+      // if Dec is decreasing slow down the Dec axis, if Dec is increasing slow down the RA axis
+      float sfr = 0.5F/FRACTIONAL_SEC;
+      float slowdownFactor1 = 1.0F;
+      float slowdownFactor2 = 1.0F;
+      static float slowdownFactor1a = 1.0F;
+      static float slowdownFactor2a = 1.0F;
+      if (a2 < last_a2) slowdownFactor2 = slowdownFactor; else slowdownFactor1 = slowdownFactor;
+
+      if (slowdownFactor1a < slowdownFactor1) { slowdownFactor1a += sfr; }
+      if (slowdownFactor1a > slowdownFactor1) { slowdownFactor1a -= sfr; }
+      if (slowdownFactor1a > 1.0F) slowdownFactor1a = 1.0F;
+      if (slowdownFactor1a < 0.2F) slowdownFactor1a = 0.2F;
+      if (slowdownFactor2a < slowdownFactor2) { slowdownFactor2a += sfr; }
+      if (slowdownFactor2a > slowdownFactor2) { slowdownFactor2a -= sfr; }
+      if (slowdownFactor2a > 1.0F) slowdownFactor2a = 1.0F;
+      if (slowdownFactor2a < 0.2F) slowdownFactor2a = 0.2F;
+
+      axis1.setFrequencyScale(slowdownFactor1a);
+      axis2.setFrequencyScale(slowdownFactor2a);
+
+      last_a2 = a2;
+    } else {
+      axis1.setFrequencyScale(1.0F);
+      axis2.setFrequencyScale(1.0F);
     }
   }
 
@@ -470,30 +631,38 @@ void Goto::poll() {
 
   // keep updating the axis targets to match the mount target
   // but allow timeout to stop tracking to guarantee synchronization
-  if (!axis1.nearTarget() || !axis2.nearTarget()) nearTargetTimeout = millis();
+  if (AXIS1_TARGET_TOLERANCE != 0.0F || AXIS2_TARGET_TOLERANCE != 0.0F || !axis1.nearTarget() || !axis2.nearTarget()) nearTargetTimeout = millis();
 
   if (mount.isTracking()) {
+    target.r += siderealToRad(mount.trackingRateOffsetRA)/FRACTIONAL_SEC;
+    target.d += siderealToRad(mount.trackingRateOffsetDec)/FRACTIONAL_SEC;
     transform.rightAscensionToHourAngle(&target, false);
-    if (stage == GG_NEAR_DESTINATION || stage == GG_DESTINATION) {
-      if (millis() - nearTargetTimeout < 4000) {
+    if (stage >= GG_NEAR_DESTINATION_START) {
+      if (millis() - nearTargetTimeout < 5000U) {
         Coordinate nearTarget = target;
         nearTarget.h -= slewDestinationDistHA;
         nearTarget.d -= slewDestinationDistDec;
 
-        if (transform.mountType == ALTAZM) transform.equToHor(&nearTarget);
+        if (transform.mountType == ALTAZM) transform.equToHor(&nearTarget); else
+        if (transform.mountType == ALTALT) transform.equToAa(&nearTarget);
+
         double a1, a2;
         transform.mountToInstrument(&nearTarget, &a1, &a2);
 
-        axis1.setTargetCoordinate(a1);
+        axis1.setTargetCoordinate(a1 + nearTarget.a1Correction);
         axis2.setTargetCoordinate(a2);
       }
     }
   }
 }
 
-// start slews with approach correction and parking support
+// start slews with approach correction and parking/homing support
 CommandError Goto::startAutoSlew() {
   CommandError e;
+
+  const unsigned long now = millis();
+  nearTargetTimeoutAxis1 = now;
+  nearTargetTimeoutAxis2 = now;
 
   if (stage == GG_NEAR_DESTINATION || stage == GG_DESTINATION) {
     destination.h -= slewDestinationDistHA;
@@ -504,14 +673,14 @@ CommandError Goto::startAutoSlew() {
   transform.mountToInstrument(&destination, &a1, &a2);
 
   if (stage == GG_DESTINATION && park.state == PS_PARKING) {
-    axis1.setTargetCoordinatePark(a1);
+    axis1.setTargetCoordinatePark(a1 + destination.a1Correction);
     axis2.setTargetCoordinatePark(a2);
   } else {
-    axis1.setTargetCoordinate(a1);
+    axis1.setTargetCoordinate(a1 + destination.a1Correction);
     axis2.setTargetCoordinate(a2);
   }
 
-  VF("MSG: Mount, goto target coordinates set (a1="); V(radToDeg(a1)); V("deg, a2="); V(radToDeg(a2)); DL(" deg)");
+  VF("MSG: Mount, goto target coordinates set (a1="); V(radToDeg(a1)); VF(" deg, a2="); V(radToDeg(a2)); VLF(" deg)");
 
   e = axis1.autoGoto(radsPerSecondCurrent);
   if (e == CE_NONE) e = axis2.autoGoto(radsPerSecondCurrent*((float)(AXIS2_SLEW_RATE_PERCENT)/100.0F));

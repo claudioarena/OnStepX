@@ -5,20 +5,20 @@
 
 #ifdef FEATURES_PRESENT
 
-void Intervalometer::init(int index) {
+#include "../../../lib/nv/Nv.h"
+
+void Intervalometer::init(uint8_t index) {
+  if (index > 7) return;
   this->index = index;
 
-  // write the default settings to NV
-  if (!nv.hasValidKey()) {
-    VF("MSG: Intervalometer/Feature"); V(index + 1); VLF(", writing defaults to NV");
-    nv.write(NV_FEATURE_SETTINGS_BASE + index*3, timeToByte(expTime));
-    nv.write(NV_FEATURE_SETTINGS_BASE + index*3 + 1, timeToByte(expDelay));
-    nv.write(NV_FEATURE_SETTINGS_BASE + index*3 + 2, (uint8_t)expCount);
-  }
+  char keyStr[26];
+  snprintf(keyStr, sizeof(keyStr), "FEATURE%u_INTV_SETTINGS", index);
+  nvKey = nv().kv().computeKey(keyStr);
 
-  expTime = byteToTime(nv.readUC(NV_FEATURE_SETTINGS_BASE + index*3));
-  expDelay = byteToTime(nv.readUC(NV_FEATURE_SETTINGS_BASE + index*3 + 1));
-  expCount = nv.readUC(NV_FEATURE_SETTINGS_BASE + index*3 + 2);
+  if (!nv().kv().getOrInit(nvKey, settings)) { DF("WRN: Nv, init failed for "); VL(keyStr); }
+  settings.expCount = constrain(settings.expCount, 0, 255);
+  settings.expDelay = constrain(settings.expDelay, 1, 3600);
+  settings.expTime = constrain(settings.expTime, 0, 3600);
 }
 
 void Intervalometer::poll() {
@@ -31,14 +31,14 @@ void Intervalometer::poll() {
 
     // start a new exposure
     pressed = P_EXP_DONE;
-    expDone = millis() + (unsigned long)(expTime*1000.0); // set exposure time in ms
+    expDone = millis() + (unsigned long)(settings.expTime*1000.0); // set exposure time in ms
   } else 
 
   // wait until exposure is done
   if (pressed == P_EXP_DONE && (long)(millis() - expDone) > 0) {
     // finish an exposure
     pressed = P_WAIT;
-    waitDone = millis() + (unsigned long)(expDelay*1000.0); // set wait time in ms
+    waitDone = millis() + (unsigned long)(settings.expDelay*1000.0); // set wait time in ms
   } else
 
   // wait until pause between exposures is done
@@ -49,24 +49,24 @@ void Intervalometer::poll() {
 }
 
 float Intervalometer::getExposure() {
-  return expTime;
+  return settings.expTime;
 }
 
 void Intervalometer::setExposure(float t) {
   if (pressed == P_STANDBY && t >= 0 && t <= 3600) {
-    expTime = t;
-    nv.write(NV_FEATURE_SETTINGS_BASE + index*3, timeToByte(expTime));
+    settings.expTime = t;
+    nv().kv().put(nvKey, settings);
   }
 }
 
 float Intervalometer::getDelay() {
-  return expDelay;
+  return settings.expDelay;
 }
 
 void Intervalometer::setDelay(float t) {
   if (pressed == P_STANDBY && t >= 1 && t <= 3600) {
-    expDelay = t;
-    nv.write(NV_FEATURE_SETTINGS_BASE + index*3 + 1, timeToByte(expDelay));
+    settings.expDelay = t;
+    nv().kv().put(nvKey, settings);
   }
 }
 
@@ -75,13 +75,13 @@ float Intervalometer::getCurrentCount() {
 }
 
 float Intervalometer::getCount() {
-  return expCount;
+  return settings.expCount;
 }
 
-void Intervalometer::setCount(float c) {
+void Intervalometer::setCount(float count) {
+  long c = lroundf(count);
   if (pressed == P_STANDBY && c >= 0 && c <= 255) {
-    expCount = c;
-    nv.write(NV_FEATURE_SETTINGS_BASE + index*3 + 2, (uint8_t)expCount);
+    settings.expCount = c;
   }
 }
 
@@ -91,43 +91,17 @@ bool Intervalometer::isEnabled() {
 
 void Intervalometer::enable(bool state) {
   enabled = state;
-  if (enabled) { thisCount = expCount; pressed = P_EXP_START; } else { thisCount=0; pressed = P_STANDBY; }
+  if (enabled) {
+    thisCount = settings.expCount;
+    pressed = P_EXP_START;
+  } else {
+    thisCount = 0;
+    pressed = P_STANDBY;
+  }
 }
 
 bool Intervalometer::isOn() {
   return pressed == P_EXP_DONE;
-}
-
-uint8_t Intervalometer::timeToByte(float t) {
-  float f = 10.0F;                             // default is 1 second
-  if (t <= 0.0162F) f = 0.0F; else             // 0.0156 (1/64 second)        (0)
-  if (t <= 0.0313F) f = 1.0F; else             // 0.0313 (1/32 second)        (1)
-  if (t <= 0.0625F) f = 2.0F; else             // 0.0625 (1/16 second)        (2)
-  if (t <= 1.0F) f = 2.0F + t*8.0F; else       // 0.125 seconds to 1 seconds  (2 to 10)
-  if (t <= 10.0F) f = 6.0F + t*4.0F; else      // 0.25 seconds to 10 seconds  (10 to 46)
-  if (t <= 30.0F) f = 26.0F + t*2.0F; else     // 0.5 seconds to 30 seconds   (46 to 86)
-  if (t <= 120.0F) f = 56.0F + t; else         // 1 second to 120 seconds     (86 to 176)
-  if (t <= 600.0F) f = 168.0F + t/15.0F; else  // 15 seconds to 300 seconds   (176 to 208)
-  if (t <= 3360.0F) f = 198.0F + t/60.0F; else // 1 minute to 56 minutes      (208 to 254)
-  if (t <= 3600.0F) f = 255.0F;                // 1 hour                      (255)
-  if (f < 0.0F) f = 0.0F;
-  if (f > 255.0F) f = 255.0F;
-  return lroundf(f);
-}
-
-float Intervalometer::byteToTime(uint8_t b) {
-  float f = 1.0;                               // default is 1 second
-  if (b == 0) f = 0.016125F; else              // 0.0156 (1/64 second)        (0)
-  if (b == 1) f = 0.03125F; else               // 0.0313 (1/32 second)        (1)
-  if (b == 2) f = 0.0625F; else                // 0.0625 (1/16 second)        (2)
-  if (b <= 10) f = (b - 2.0F)/8.0F; else       // 0.125 seconds to 1 seconds  (2 to 10)
-  if (b <= 46) f = (b - 6.0F)/4.0F; else       // 0.25 seconds to 10 seconds  (10 to 46)
-  if (b <= 86) f = (b - 26.0F)/2.0F; else      // 0.5 seconds to 30 seconds   (46 to 86)
-  if (b <= 176) f = (b - 56.0F); else          // 1 second to 120 seconds     (86 to 176)
-  if (b <= 208) f = (b - 168.0F)*15.0F; else   // 15 seconds to 300 seconds   (176 to 208)
-  if (b <= 254) f = (b - 198.0F)*60.0F; else   // 1 minute to 56 minutes      (208 to 254)
-  if (b == 255) f = 3600.0F;                   // 1 hour                      (255)
-  return f;
 }
 
 #endif
