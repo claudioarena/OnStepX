@@ -332,7 +332,7 @@
 #define AXIS4_SENSE_LIMIT_MAX         OFF //    OFF, HIGH or LOW state on limit sense switch stops movement.                  Option
 
 #define AXIS4_ENABLE_STATE           HIGH
-#define AXIS4_BACKLASH_RATE          AXIS4_SLEW_RATE_DESIRED // in microns/sec
+#define AXIS4_BACKLASH_RATE          AXIS4_SLEW_RATE_BASE_DESIRED // in microns/sec
 #define AXIS4_ACCELERATION_TIME       0.1 // in seconds, to selected rate. Set to minimum.
 #define AXIS4_RAPID_STOP_TIME         0.1 // in seconds, to stop. Set to minimum.
 
