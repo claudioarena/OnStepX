@@ -14,11 +14,17 @@
 
 // automatic setup of serial passthrough
 #if SERIAL_B_ESP_FLASHING == ON
-  #define SERIAL_PASSTHROUGH SERIAL_B
-  #define SERIAL_PASSTHROUGH_BAUD_DEFAULT SERIAL_B_BAUD_DEFAULT
-  #define SERIAL_PASSTHROUGH_RX SERIAL_B_RX
-  #define SERIAL_PASSTHROUGH_TX SERIAL_B_TX
-  #define SERIAL_PASSTHROUGH_RXTX_SET SERIAL_B_RXTX_SET
+#define SERIAL_PASSTHROUGH SERIAL_B
+#define SERIAL_PASSTHROUGH_BAUD_DEFAULT SERIAL_B_BAUD_DEFAULT
+#ifdef SERIAL_B_RX
+#define SERIAL_PASSTHROUGH_RX SERIAL_B_RX
+#endif
+#ifdef SERIAL_B_TX
+#define SERIAL_PASSTHROUGH_TX SERIAL_B_TX
+#endif
+#ifdef SERIAL_B_RXTX_SET
+#define SERIAL_PASSTHROUGH_RXTX_SET SERIAL_B_RXTX_SET
+#endif
 #endif
 
 // default settings for any TMC UART drivers that may be present
@@ -45,13 +51,27 @@
 #define ETHERNET_RESET_PIN          OFF
 #endif
 
-// Specify the default I2C pins (if they can be set via the HAL)
+// default settings for I2C
 #ifndef I2C_SDA_PIN
 #define I2C_SDA_PIN                 OFF
 #endif
 
 #ifndef I2C_SCL_PIN
 #define I2C_SCL_PIN                 OFF
+#endif
+
+#ifdef ESP32
+  #if (defined(I2C_SCL_PIN) && I2C_SCL_PIN != OFF) && (defined(I2C_SDA_PIN) && I2C_SDA_PIN != OFF)
+    #define WIRE_INIT() HAL_WIRE.begin(I2C_SDA_PIN, I2C_SCL_PIN); HAL_WIRE_SET_CLOCK()
+  #else
+    #define WIRE_INIT() HAL_WIRE.begin(); HAL_WIRE_SET_CLOCK()
+  #endif
+#else
+  #if (defined(I2C_SCL_PIN) && I2C_SCL_PIN != OFF) && (defined(I2C_SDA_PIN) && I2C_SDA_PIN != OFF)
+    #define WIRE_INIT() HAL_WIRE.setSDA(I2C_SDA_PIN); HAL_WIRE.setSCL(I2C_SCL_PIN); HAL_WIRE_SET_CLOCK()
+  #else
+    #define WIRE_INIT() HAL_WIRE_SET_CLOCK()
+  #endif
 #endif
 
 // --------------------------------------------------------------------------------------------------------
@@ -116,6 +136,10 @@
 
 #ifndef ADDON_TRIGR_PIN
 #define ADDON_TRIGR_PIN             OFF
+#endif
+
+#ifndef ADDON_SELECT_PIN
+#define ADDON_SELECT_PIN            OFF
 #endif
 
 #ifndef ADDON_GPIO0_PIN
@@ -204,16 +228,10 @@
 #define AXIS1_DECAY_PIN             OFF
 #endif
 #ifndef AXIS1_SERVO_PH1_PIN
-#define AXIS1_SERVO_PH1_PIN         OFF
+#define AXIS1_SERVO_PH1_PIN         AXIS1_DIR_PIN
 #endif
 #ifndef AXIS1_SERVO_PH2_PIN
-#define AXIS1_SERVO_PH2_PIN         OFF
-#endif
-#ifndef AXIS1_ENCODER_A_PIN
-#define AXIS1_ENCODER_A_PIN         OFF
-#endif
-#ifndef AXIS1_ENCODER_B_PIN
-#define AXIS1_ENCODER_B_PIN         OFF
+#define AXIS1_SERVO_PH2_PIN         AXIS1_STEP_PIN
 #endif
 #ifndef AXIS1_FAULT_PIN
 #define AXIS1_FAULT_PIN             OFF
@@ -253,16 +271,10 @@
 #define AXIS2_DECAY_PIN             OFF
 #endif
 #ifndef AXIS2_SERVO_PH1_PIN
-#define AXIS2_SERVO_PH1_PIN         OFF
+#define AXIS2_SERVO_PH1_PIN         AXIS2_DIR_PIN
 #endif
 #ifndef AXIS2_SERVO_PH2_PIN
-#define AXIS2_SERVO_PH2_PIN         OFF
-#endif
-#ifndef AXIS2_ENCODER_A_PIN
-#define AXIS2_ENCODER_A_PIN         OFF
-#endif
-#ifndef AXIS2_ENCODER_B_PIN
-#define AXIS2_ENCODER_B_PIN         OFF
+#define AXIS2_SERVO_PH2_PIN         AXIS2_STEP_PIN
 #endif
 #ifndef AXIS2_FAULT_PIN
 #define AXIS2_FAULT_PIN             OFF
@@ -373,6 +385,23 @@
 #endif
 #ifndef AXIS4_SENSE_LIMIT_MAX_PIN
 #define AXIS4_SENSE_LIMIT_MAX_PIN   OFF
+#endif
+
+#ifndef AXIS1_ENCODER_A_PIN
+#define AXIS1_ENCODER_A_PIN         AXIS3_STEP_PIN
+#endif
+#ifndef AXIS1_ENCODER_B_PIN
+#define AXIS1_ENCODER_B_PIN         AXIS3_DIR_PIN
+#endif
+#ifndef AXIS2_ENCODER_A_PIN
+#define AXIS2_ENCODER_A_PIN         AXIS4_STEP_PIN
+#endif
+#ifndef AXIS2_ENCODER_B_PIN
+  #if AXIS4_DIR_PIN != AXIS3_DIR_PIN || AXIS4_DIR_PIN == OFF
+    #define AXIS2_ENCODER_B_PIN     AXIS4_DIR_PIN
+  #else
+    #define AXIS2_ENCODER_B_PIN     AXIS2_M3_PIN
+  #endif
 #endif
 
 #ifndef AXIS5_ENABLE_PIN

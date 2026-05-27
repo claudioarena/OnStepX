@@ -10,34 +10,38 @@
 
 enum Direction: uint8_t {DIR_NONE, DIR_FORWARD, DIR_REVERSE, DIR_BOTH};
 
+#ifndef STEP_WAVE_FORM
+#define STEP_WAVE_FORM SQUARE
+#endif
+
 class Motor {
   public:
+    Motor(uint8_t axisNumber, int8_t reverse);
+
     // sets up the motor identification
     virtual bool init();
 
-    // set motor reverse state
-    virtual void setReverse(int8_t state);
+    // returns the number of parameters from the motor and motor driver
+    virtual uint8_t getParameterCount() { return numParameters; }
 
-    // get motor parameters type code
-    virtual char getParameterTypeCode();
+    // returns the specified axis parameter
+    virtual AxisParameter* getParameter(uint8_t number) { if (number > numParameters) return &invalid; else return parameter[number]; }
 
-    // get motor default parameters
-    void getDefaultParameters(float *param1, float *param2, float *param3, float *param4, float *param5, float *param6);
+    // check if parameter is valid
+    virtual bool parameterIsValid(AxisParameter* parameter, bool next = false);
 
-    // set motor default parameters
-    void setDefaultParameters(float param1, float param2, float param3, float param4, float param5, float param6);
+    // returns the specified axis parameter by name
+    AxisParameter* getParameterByName(const char* name);
 
-    // set motor parameters
-    virtual void setParameters(float param1, float param2, float param3, float param4, float param5, float param6);
-
-    // validate motor parameters
-    virtual bool validateParameters(float param1, float param2, float param3, float param4, float param5, float param6);
+    // sets reversal of axis directions
+    // \param state: true reverses the direction behavior specified in settings
+    virtual void setReverse(bool state) { reversed = state; }
 
     // sets motor enable on/off (if possible)
-    virtual void enable(bool value);
+    virtual void enable(bool value) { UNUSED(value); }
 
     // get the associated stepper motor driver status
-    virtual DriverStatus getDriverStatus();
+    virtual DriverStatus getDriverStatus() { return errorStatus; }
 
     // resets motor and target angular position in steps, also zeros backlash and index 
     virtual void resetPositionSteps(long value);
@@ -89,32 +93,67 @@ class Motor {
     // returns 1 if distance to origin is closer else -1 if target is closer
     int getRampDirection();
 
+    // sets overall maximum frequency
+    // \param frequency: rate of motion in steps per second
+    virtual void setFrequencyMax(float frequency) { UNUSED(frequency); }
+
     // get movement frequency in steps per second
-    virtual float getFrequencySteps();
+    virtual float getFrequencySteps() { return 0; }
 
     // set frequency (+/-) in steps per second negative frequencies move reverse in direction (0 stops motion)
-    virtual void setFrequencySteps(float frequency);
+    virtual void setFrequencySteps(float frequency) { UNUSED(frequency); }
 
     // set backlash frequency in steps per second
     virtual void setBacklashFrequencySteps(float frequency);
 
     // get tracking mode steps per slewing mode step
-    virtual int getStepsPerStepSlewing();
+    virtual int getStepsPerStepSlewing() { return 1; }
 
     // get synchronized state (automatic movement of target at setFrequencySteps() rate)
-    inline bool getSynchronized() { return synchronized; }
+    inline bool getSynchronized() { return sync; }
 
     // set synchronized state (automatic movement of target at setFrequencySteps() rate)
-    inline void setSynchronized(bool state) { synchronized = state; if (synchronized) targetSteps = motorSteps; }
+    virtual inline void setSynchronized(bool state) {
+      if (state) {
+        noInterrupts();
+        sync = state;
+        targetSteps = motorSteps;
+        interrupts();
+      } else sync = state;
+    }
 
     // get the current direction of motion
     Direction getDirection();
 
+    // microstep sequencer steps
+    int getSequencerSteps() { return 1; };
+
     // set slewing state (hint that we are about to slew or are done slewing)
-    virtual void setSlewing(bool state);
+    virtual void setSlewing(bool state) { UNUSED(state); }
+
+    // signal that the motor load has exceeded its threshold
+    virtual bool isStalled() { return false; }
 
     // calibrate the motor if required
-    virtual void calibrate() {}
+    virtual void calibrate(float value) { UNUSED(value); }
+
+    // calibrate the motor driver if required
+    virtual void calibrateDriver() {}
+
+    // set zero of absolute encoders
+    virtual uint32_t encoderZero() { return 0; }
+
+    // return the encoder count, if present
+    virtual int32_t getEncoderCount() { return 0; }
+
+    // set origin of absolute encoders
+    virtual void encoderSetOrigin(uint32_t origin) { UNUSED(origin); }
+
+    // true when this motor has an absolute position source after boot
+    virtual bool hasAbsoluteEncoder() const { return false; }
+
+    // get the motor name
+    virtual const char* name() { return NULL; }
 
     // monitor and respond to motor state as required
     virtual void poll() {}
@@ -124,6 +163,12 @@ class Motor {
 
     volatile uint8_t monitorHandle = 0;        // handle to the axis task monitor
 
+    bool enabled = false;                      // enable/disable logical state
+
+    bool ready = false;                        // set to true after successful init
+
+    bool calibrating = false;                  // shadow disable when calibrating
+
   protected:
     // disable backlash compensation, to work properly there must be an enable call to match
     void disableBacklash();
@@ -132,10 +177,10 @@ class Motor {
     void enableBacklash();
 
     volatile uint8_t axisNumber = 0;           // axis number for this motor (1 to 9 in OnStepX)
-    char axisPrefix[16];                       // prefix for debug messages
+    char axisPrefix[32];                       // prefix for debug messages
+    char nameStr[40];                          // name of this motor/driver
 
-    bool enabled = false;                      // enable/disable logical state (disabled is powered down)
-    bool synchronized = true;                  // locks movement of axis target with timer rate
+    volatile bool sync = true;                 // locks movement of axis target with timer rate
     bool limitsCheck = true;                   // enable/disable numeric range limits (doesn't apply to limit switches)
 
     uint8_t homeSenseHandle = 0;               // home sensor handle
@@ -152,12 +197,23 @@ class Motor {
     volatile long targetSteps = 0;             // where we want the motor
     volatile long motorSteps = 0;              // where the motor is not counting backlash
     volatile long indexSteps = 0;              // for absolute motor position to axis position
-    volatile int  step = 1;                    // step size, and for direction control
+    volatile long step = 1;                    // step size, and for direction control
 
-    float default_param1 = 0, default_param2 = 0, default_param3 = 0, default_param4 = 0, default_param5 = 0, default_param6 = 0;
+    // a fault return status
+    const DriverStatus errorStatus = {false, {false, false}, {false, false}, false, false, false, true};
 
-    bool poweredDown = false;
+    // reverses the set direction of motion
+    bool reversed = false;
 
+    // set direction of motion
+    bool normalizedReverse = false;
+
+    // runtime adjustable settings
+    const int numParameters = 1;
+    AxisParameter invalid = {NAN, NAN, NAN, NAN, NAN, AXP_INVALID, ""};
+    AxisParameter reverse = {NAN, NAN, NAN, 0, 1, AXP_BOOLEAN, AXPN_REVERSE};
+
+    AxisParameter* parameter[2] = {&invalid, &reverse};
 };
 
 #endif

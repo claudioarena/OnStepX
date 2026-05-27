@@ -4,7 +4,6 @@
 
 #if defined(ESP32)
 
-// Serial ports (see Pins.defaults.h for SERIAL_A)
 // Serial0: RX Pin GPIO3, TX Pin GPIO1 (to USB serial adapter)
 // Serial1: RX1 Pin GPIO10, TX1 Pin GPIO9 (on SPI Flash pins, must be moved to be used)
 // Serial2: RX2 Pin GPIO16, TX2 Pin GPIO17
@@ -13,11 +12,10 @@
   #define SERIAL_A              Serial
 #endif
 
-#define I2C_SDA_PIN             21
-#define I2C_SCL_PIN             22
+// Uses default ESP32 I2C GPIO21 (SDA) and GPIO22 (SCL)
 
 // Use the following settings for the 4x TMC UART drivers
-#ifdef STEP_DIR_TMC_UART_PRESENT
+#if defined(STEP_DIR_TMC_UART_PRESENT) || defined(SERVO_TMC2209_PRESENT)
   #define SERIAL_TMC_HARDWARE_UART
   #define SERIAL_TMC            Serial1          // Use a single hardware serial port to up to four drivers
   #define SERIAL_TMC_BAUD       460800           // Baud rate
@@ -27,8 +25,6 @@
     #define SERIAL_TMC_RX       3                // Recieving data
     #define SERIAL_TMC_TX       1                // Transmit data
     #define SPARE_RX_PIN        OFF              // Set _RX above to 0 (GPIO0) and use 3 here
-    #define I2C_SDA_PIN         21
-    #define I2C_SCL_PIN         22
   #else
     #ifndef SERIAL_TMC_RX
       #define SERIAL_TMC_RX     0                // Recieving data (GPIO0 unused except for flashing)
@@ -110,6 +106,18 @@
 #ifndef AXIS1_SENSE_HOME_PIN
   #define AXIS1_SENSE_HOME_PIN  AUX3_PIN
 #endif
+#ifndef AXIS1_SERVO_PH1_PIN
+  #define AXIS1_SERVO_PH1_PIN   OFF
+#endif
+#ifndef AXIS1_SERVO_PH2_PIN
+  #define AXIS1_SERVO_PH2_PIN   OFF
+#endif
+#ifndef AXIS1_ENCODER_A_PIN
+  #define AXIS1_ENCODER_A_PIN   OFF
+#endif
+#ifndef AXIS1_ENCODER_B_PIN
+  #define AXIS1_ENCODER_B_PIN   OFF
+#endif
 
 // Axis2 Dec/Alt step/dir driver (Y-AXIS)
 #define AXIS2_ENABLE_PIN        SHARED
@@ -121,6 +129,18 @@
 #define AXIS2_DIR_PIN           32
 #ifndef AXIS2_SENSE_HOME_PIN
   #define AXIS2_SENSE_HOME_PIN  AUX4_PIN
+#endif
+#ifndef AXIS2_SERVO_PH1_PIN
+  #define AXIS2_SERVO_PH1_PIN   OFF
+#endif
+#ifndef AXIS2_SERVO_PH2_PIN
+  #define AXIS2_SERVO_PH2_PIN   OFF
+#endif
+#ifndef AXIS2_ENCODER_PH1_PIN
+  #define AXIS2_ENCODER_A_PIN   OFF
+#endif
+#ifndef AXIS2_ENCODER_B_PIN
+  #define AXIS2_ENCODER_B_PIN   OFF
 #endif
 
 // For rotator stepper driver (Z-AXIS)

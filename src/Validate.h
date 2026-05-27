@@ -3,8 +3,22 @@
 #pragma once
 #include "Common.h"
 
-#if FileVersionConfig != 5
-  #error "Configuration (Config.h): FileVersionConfig (Config.h version) must be 5 for this OnStep."
+#if !defined(FileVersionConfig) || FileVersionConfig != 6 // per FirmwareVersionConfig
+  #error "Configuration (Config.h): FileVersionConfig (Config.h version) must be 6 for this OnStep."
+#endif
+
+// BACKWARDS COMPATABILITY ------------------------
+#ifdef AXIS3_SLEW_RATE_DESIRED
+  #warning "Configuration (Config.h): AXIS3_SLEW_RATE_DESIRED has been replaced with AXIS3_SLEW_RATE_BASE_DESIRED please update"
+  #define AXIS3_SLEW_RATE_BASE_DESIRED AXIS3_SLEW_RATE_DESIRED
+#endif
+#ifdef AXIS4_SLEW_RATE_DESIRED
+  #warning "Configuration (Config.h): AXIS4_SLEW_RATE_DESIRED has been replaced with AXIS4_SLEW_RATE_BASE_DESIRED please update"
+  #define AXIS4_SLEW_RATE_BASE_DESIRED AXIS4_SLEW_RATE_DESIRED
+#endif
+#ifdef AXIS5_SLEW_RATE_DESIRED
+  #warning "Configuration (Config.h): AXIS5_SLEW_RATE_DESIRED has been replaced with AXIS5_SLEW_RATE_BASE_DESIRED please update"
+  #define AXIS5_SLEW_RATE_BASE_DESIRED AXIS5_SLEW_RATE_DESIRED
 #endif
 
 // GENERAL ---------------------------------------
@@ -19,14 +33,14 @@
 
 #if SERIAL_A_BAUD_DEFAULT != 9600 && SERIAL_A_BAUD_DEFAULT != 19200 && SERIAL_A_BAUD_DEFAULT != 38400 && \
     SERIAL_A_BAUD_DEFAULT != 57600 && SERIAL_A_BAUD_DEFAULT != 115200 && SERIAL_A_BAUD_DEFAULT != 230400 && \
-    SERIAL_A_BAUD_DEFAULT != 460800 && SERIAL_A_BAUD_DEFAULT != OFF
-  #warning "Configuration (Config.h): Setting SERIAL_A_BAUD_DEFAULT unknown, use 9600, 19200, 38400, 57600, 115200, 230400, of 460800 (baud.)"
+    SERIAL_A_BAUD_DEFAULT != 460800 && SERIAL_A_BAUD_DEFAULT != 921600 && SERIAL_A_BAUD_DEFAULT != OFF
+  #warning "Configuration (Config.h): Setting SERIAL_A_BAUD_DEFAULT unknown, use 9600, 19200, 38400, 57600, 115200, 230400, 460800, or 921600 (baud.)"
 #endif
 
 #if SERIAL_B_BAUD_DEFAULT != 9600 && SERIAL_B_BAUD_DEFAULT != 19200 && SERIAL_B_BAUD_DEFAULT != 38400 && \
     SERIAL_B_BAUD_DEFAULT != 57600 && SERIAL_B_BAUD_DEFAULT != 115200 && SERIAL_B_BAUD_DEFAULT != 230400 && \
-    SERIAL_B_BAUD_DEFAULT != 460800 && SERIAL_B_BAUD_DEFAULT != OFF
-  #warning "Configuration (Config.h): Setting SERIAL_B_BAUD_DEFAULT unknown, use OFF, 9600, 19200, 38400, 57600, 115200, 230400, of 460800 (baud.)"
+    SERIAL_B_BAUD_DEFAULT != 460800 && SERIAL_B_BAUD_DEFAULT != 921600 && SERIAL_B_BAUD_DEFAULT != OFF
+  #warning "Configuration (Config.h): Setting SERIAL_B_BAUD_DEFAULT unknown, use OFF, 9600, 19200, 38400, 57600, 115200, 230400, 460800, or 921600 (baud.)"
 #endif
 
 #if SERIAL_B_ESP_FLASHING != ON && SERIAL_B_ESP_FLASHING != OFF
@@ -43,20 +57,24 @@
 
 #if SERIAL_C_BAUD_DEFAULT != 9600 && SERIAL_C_BAUD_DEFAULT != 19200 && SERIAL_C_BAUD_DEFAULT != 38400 && \
     SERIAL_C_BAUD_DEFAULT != 57600 && SERIAL_C_BAUD_DEFAULT != 115200 && SERIAL_C_BAUD_DEFAULT != 230400 && \
-    SERIAL_C_BAUD_DEFAULT != 460800 && SERIAL_C_BAUD_DEFAULT != OFF
-  #warning "Configuration (Config.h): Setting SERIAL_C_BAUD_DEFAULT unknown, use OFF, 9600, 19200, 38400, 57600, 115200, 230400, of 460800 (baud.)"
+    SERIAL_C_BAUD_DEFAULT != 460800 && SERIAL_C_BAUD_DEFAULT != 921600 && SERIAL_C_BAUD_DEFAULT != OFF
+  #warning "Configuration (Config.h): Setting SERIAL_C_BAUD_DEFAULT unknown, use OFF, 9600, 19200, 38400, 57600, 115200, 230400, 460800, or 921600 (baud.)"
 #endif
 
 #if SERIAL_D_BAUD_DEFAULT != 9600 && SERIAL_D_BAUD_DEFAULT != 19200 && SERIAL_D_BAUD_DEFAULT != 38400 && \
     SERIAL_D_BAUD_DEFAULT != 57600 && SERIAL_D_BAUD_DEFAULT != 115200 && SERIAL_D_BAUD_DEFAULT != 230400 && \
-    SERIAL_D_BAUD_DEFAULT != 460800 && SERIAL_D_BAUD_DEFAULT != OFF
-  #warning "Configuration (Config.h): Setting SERIAL_D_BAUD_DEFAULT unknown, use OFF, 9600, 19200, 38400, 57600, 115200, 230400, of 460800 (baud.)"
+    SERIAL_D_BAUD_DEFAULT != 460800 && SERIAL_D_BAUD_DEFAULT != 921600 && SERIAL_D_BAUD_DEFAULT != OFF
+  #warning "Configuration (Config.h): Setting SERIAL_D_BAUD_DEFAULT unknown, use OFF, 9600, 19200, 38400, 57600, 115200, 230400, 460800, or 921600 (baud.)"
 #endif
 
 #if SERIAL_E_BAUD_DEFAULT != 9600 && SERIAL_E_BAUD_DEFAULT != 19200 && SERIAL_E_BAUD_DEFAULT != 38400 && \
     SERIAL_E_BAUD_DEFAULT != 57600 && SERIAL_E_BAUD_DEFAULT != 115200 && SERIAL_E_BAUD_DEFAULT != 230400 && \
-    SERIAL_E_BAUD_DEFAULT != 460800 && SERIAL_E_BAUD_DEFAULT != OFF
-  #warning "Configuration (Config.h): Setting SERIAL_E_BAUD_DEFAULT unknown, use OFF, 9600, 19200, 38400, 57600, 115200, 230400, of 460800 (baud.)"
+    SERIAL_E_BAUD_DEFAULT != 460800 && SERIAL_E_BAUD_DEFAULT != 921600 && SERIAL_E_BAUD_DEFAULT != OFF
+  #warning "Configuration (Config.h): Setting SERIAL_E_BAUD_DEFAULT unknown, use OFF, 9600, 19200, 38400, 57600, 115200, 230400, 460800, or 921600 (baud.)"
+#endif
+
+#if SERIAL_RADIO != OFF && SERIAL_RADIO != BLUETOOTH && SERIAL_RADIO != WIFI_ACCESS_POINT && SERIAL_RADIO != WIFI_STATION
+  #warning "Configuration (Config.h): Setting SERIAL_RADIO unknown, use OFF, BLUETOOTH, WIFI_ACCESS_POINT, or WIFI_STATION"
 #endif
 
 #if STATUS_LED != OFF && STATUS_LED != ON
@@ -94,7 +112,7 @@
 #if AXIS1_DRIVER_MODEL != OFF && \
     (AXIS1_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS1_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
     (AXIS1_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS1_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
-    (AXIS1_DRIVER_MODEL < ODRIVE_DRIVER_FIRST || AXIS1_DRIVER_MODEL > ODRIVE_DRIVER_LAST)
+    (AXIS1_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS1_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS1_DRIVER_MODEL unknown, use OFF or a valid DRIVER (from Constants.h)"
 #endif
 
@@ -153,20 +171,34 @@
   #error "Configuration (Config.h): Setting AXIS1_POWER_DOWN unknown, use OFF or ON."
 #endif
 
-#if AXIS1_LIMIT_MIN < -360 || AXIS1_LIMIT_MIN > -90
-  #error "Configuration (Config.h): Setting AXIS1_LIMIT_MIN unknown, use value in the range -90 to -360."
+#if AXIS1_SECTOR_GEAR != ON && AXIS1_SECTOR_GEAR != OFF
+  #error "Configuration (Config.h): Setting AXIS1_SECTOR_GEAR unknown, use OFF or ON."
 #endif
 
-#if AXIS1_LIMIT_MAX < 90 || AXIS1_LIMIT_MAX > 360
-  #error "Configuration (Config.h): Setting AXIS1_LIMIT_MAX unknown, use value in the range 90 to 360."
+#if AXIS1_SECTOR_GEAR == ON
+  #if MOUNT_SUBTYPE != GEM && MOUNT_SUBTYPE != FORK
+    #error "Configuration (Config.h): Setting MOUNT_TYPE is not compatible with AXIS1_SECTOR_GEAR ON  (from Constants.h)"
+  #endif
+  #if (AXIS1_SENSE_HOME) != OFF && (AXIS1_SENSE_HOME_OFFSET) != 0
+    #error "Configuration (Config.h): Enabling AXIS1_SECTOR_GEAR and AXIS1_SENSE_HOME requires an AXIS1_SENSE_HOME_OFFSET of 0."
+  #endif
+  #if (AXIS2_SENSE_HOME) != OFF && AXIS2_TANGENT_ARM == OFF
+    #error "Configuration (Config.h): Enabling AXIS1_SECTOR_GEAR requires AXIS2_SENSE_HOME to be OFF (except for tangent arm Dec mounts.)"
+  #endif
+#else
+  #if AXIS2_TANGENT_ARM == OFF && ((AXIS1_SENSE_HOME) == OFF && (AXIS2_SENSE_HOME) != OFF)
+    #error "Configuration (Config.h): Enabling AXIS2_SENSE_HOME requires enabling AXIS1_SENSE_HOME or AXIS2_TANGENT_ARM."
+  #endif
+  #if AXIS1_LIMIT_MIN < -360 || AXIS1_LIMIT_MIN > -90
+    #error "Configuration (Config.h): Setting AXIS1_LIMIT_MIN unknown, use value in the range -90 to -360."
+  #endif
+  #if AXIS1_LIMIT_MAX < 90 || AXIS1_LIMIT_MAX > 360
+    #error "Configuration (Config.h): Setting AXIS1_LIMIT_MAX unknown, use value in the range 90 to 360."
+  #endif
 #endif
 
 #if (AXIS1_SENSE_HOME) != OFF && (AXIS1_SENSE_HOME) < 0
   #error "Configuration (Config.h): Setting AXIS1_SENSE_HOME unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
-#endif
-
-#if (AXIS1_SENSE_HOME) != OFF && (AXIS2_SENSE_HOME) == OFF
-  #error "Configuration (Config.h): Enabling AXIS1_SENSE_HOME requires enabling AXIS2_SENSE_HOME also."
 #endif
 
 #if (AXIS1_SENSE_LIMIT_MIN) != OFF && (AXIS1_SENSE_LIMIT_MIN) < 0
@@ -181,7 +213,7 @@
 #if AXIS2_DRIVER_MODEL != OFF && \
     (AXIS2_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS2_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
     (AXIS2_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS2_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
-    (AXIS2_DRIVER_MODEL < ODRIVE_DRIVER_FIRST || AXIS2_DRIVER_MODEL > ODRIVE_DRIVER_LAST)
+    (AXIS2_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS2_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS2_DRIVER_MODEL unknown, use a valid DRIVER (from Constants.h)"
 #endif
 
@@ -232,6 +264,43 @@
   #endif
 #endif
 
+#if defined(AXIS1_SERVO_PRESENT) && \
+    (AXIS1_ENCODER == AS37_H39B_B || AXIS1_ENCODER == JTW_24BIT || AXIS1_ENCODER == JTW_26BIT || AXIS1_ENCODER == LIKA_ASC85 || \
+     (AXIS1_ENCODER == SERIAL_BRIDGE && SERIAL_ENCODER_ABSOLUTE == ON))
+  #define HAS_ABSOLUTE_ENCODER_SERVO_AXIS1
+#endif
+
+#if defined(AXIS2_SERVO_PRESENT) && \
+    (AXIS2_ENCODER == AS37_H39B_B || AXIS2_ENCODER == JTW_24BIT || AXIS2_ENCODER == JTW_26BIT || AXIS2_ENCODER == LIKA_ASC85 || \
+     (AXIS2_ENCODER == SERIAL_BRIDGE && SERIAL_ENCODER_ABSOLUTE == ON))
+  #define HAS_ABSOLUTE_ENCODER_SERVO_AXIS2
+#endif
+
+#if defined(HAS_ABSOLUTE_ENCODER_SERVO_AXIS1) && defined(HAS_ABSOLUTE_ENCODER_SERVO_AXIS2)
+  #define HAS_ABSOLUTE_ENCODER_SERVO
+#endif
+
+#if AXIS1_DRIVER_MODEL == ODRIVE
+  #define AXIS1_HAS_ABSOLUTE_COORD_AUTHORITY ODRIVE_ABSOLUTE
+#elif defined(HAS_ABSOLUTE_ENCODER_SERVO_AXIS1)
+  #define AXIS1_HAS_ABSOLUTE_COORD_AUTHORITY ON
+#else
+  #define AXIS1_HAS_ABSOLUTE_COORD_AUTHORITY OFF
+#endif
+
+#if AXIS2_DRIVER_MODEL == ODRIVE
+  #define AXIS2_HAS_ABSOLUTE_COORD_AUTHORITY ODRIVE_ABSOLUTE
+#elif defined(HAS_ABSOLUTE_ENCODER_SERVO_AXIS2)
+  #define AXIS2_HAS_ABSOLUTE_COORD_AUTHORITY ON
+#else
+  #define AXIS2_HAS_ABSOLUTE_COORD_AUTHORITY OFF
+#endif
+
+#if (AXIS1_HAS_ABSOLUTE_COORD_AUTHORITY == ON && AXIS2_HAS_ABSOLUTE_COORD_AUTHORITY == OFF) || \
+    (AXIS1_HAS_ABSOLUTE_COORD_AUTHORITY == OFF && AXIS2_HAS_ABSOLUTE_COORD_AUTHORITY == ON)
+  #error "Configuration (Config.h): Axes 1 and 2 must both use absolute coordinate authority or neither may use it."
+#endif
+
 #if AXIS2_REVERSE != ON && AXIS2_REVERSE != OFF
   #error "Configuration (Config.h): Setting AXIS2_REVERSE unknown, use OFF or ON."
 #endif
@@ -260,25 +329,56 @@
   #error "Configuration (Config.h): Setting AXIS2_SENSE_LIMIT_MAX unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
 #endif
 
+#if MOUNT_SUBTYPE < MOUNT_SUBTYPE_FIRST || MOUNT_SUBTYPE > MOUNT_SUBTYPE_LAST
+  #error "Configuration (Config.h): Setting MOUNT_TYPE unknown, use a valid MOUNT TYPE (from Constants.h)"
+#endif
+
 #if AXIS2_TANGENT_ARM != ON && AXIS2_TANGENT_ARM != OFF
   #error "Configuration (Config.h): Setting AXIS2_TANGENT_ARM unknown, use OFF or ON."
+#endif
+
+#if AXIS2_TANGENT_ARM == ON
+  #if MOUNT_SUBTYPE != GEM && MOUNT_SUBTYPE != FORK
+    #error "Configuration (Config.h): Setting MOUNT_TYPE is not compatible with AXIS2_TANGENT_ARM ON  (from Constants.h)"
+  #endif
+  #if (AXIS2_SENSE_HOME) != OFF && (AXIS2_SENSE_HOME_OFFSET) != 0
+    #error "Configuration (Config.h): Enabling AXIS2_TANGENT_ARM and AXIS2_SENSE_HOME requires an AXIS2_SENSE_HOME_OFFSET of 0."
+  #endif
+  #if (AXIS1_SENSE_HOME) != OFF && AXIS1_SECTOR_GEAR == OFF
+    #error "Configuration (Config.h): Enabling AXIS2_TANGENT_ARM requires AXIS1_SENSE_HOME to be OFF (except for sector gear RA mounts.)"
+  #endif
+#else
+  #if (AXIS2_SENSE_HOME) != OFF && (AXIS1_SENSE_HOME) == OFF
+    #error "Configuration (Config.h): Enabling AXIS2_SENSE_HOME requires enabling AXIS1_SENSE_HOME or AXIS2_TANGENT_ARM."
+  #endif
 #endif
 
 #if AXIS2_TANGENT_ARM_CORRECTION != ON && AXIS2_TANGENT_ARM_CORRECTION != OFF
   #error "Configuration (Config.h): Setting AXIS2_TANGENT_ARM_CORRECTION unknown, use OFF or ON."
 #endif
 
-#if AXIS2_TANGENT_ARM == OFF && (AXIS2_SENSE_HOME) != OFF && (AXIS1_SENSE_HOME) == OFF
-  #error "Configuration (Config.h): Enabling AXIS2_SENSE_HOME requires enabling AXIS1_SENSE_HOME or AXIS2_TANGENT_ARM."
-#endif
-
-// MOUNT TYPE
-#if MOUNT_SUBTYPE < GEM || MOUNT_SUBTYPE > ALTAZM
-  #error "Configuration (Config.h): Setting MOUNT_TYPE unknown, use a valid MOUNT TYPE (from Constants.h)"
+#if MOUNT_ALTERNATE_ORIENTATION != OFF && MOUNT_ALTERNATE_ORIENTATION != ON
+  #error "Configuration (Config.h): Setting MOUNT_ALTERNATE_ORIENTATION unknown, use ON or OFF"
 #endif
 
 #if MOUNT_COORDS < MOUNT_COORDS_FIRST && MOUNT_COORDS > MOUNT_COORDS_LAST
   #error "Configuration (Config.h): Setting MOUNT_COORDS unknown, use a valid MOUNT COORDS (from Constants.h)"
+#endif
+
+#if MOUNT_COORDS_MEMORY != ON && MOUNT_COORDS_MEMORY != OFF
+  #error "Configuration (Config.h): Setting MOUNT_COORDS_MEMORY unknown, use ON or OFF"
+#endif
+
+#if MOUNT_STARTUP_MODE < SA_STRICT || MOUNT_STARTUP_MODE > SA_PERMISSIVE
+  #error "Configuration (Config.h): Setting MOUNT_STARTUP_MODE unknown, use SA_STRICT, SA_AUTO, or SA_PERMISSIVE"
+#endif
+
+#if NV_INIT_ERROR_REVOKES_AUTHORITY != ON && NV_INIT_ERROR_REVOKES_AUTHORITY != OFF
+  #error "Configuration (Config.h): Setting NV_INIT_ERROR_REVOKES_AUTHORITY unknown, use OFF or ON."
+#endif
+
+#if MOUNT_ENABLE_IN_STANDBY != ON && MOUNT_ENABLE_IN_STANDBY != OFF
+  #error "Configuration (Config.h): Setting MOUNT_ENABLE_IN_STANDBY unknown, use ON or OFF"
 #endif
 
 #if ALIGN_MAX_STARS != AUTO && (ALIGN_MAX_STARS < 1 && ALIGN_MAX_STARS > 9)
@@ -290,10 +390,18 @@
   #error "Configuration (Config.h): Setting TIME_LOCATION_SOURCE unknown, use OFF or valid TIME LOCATION SOURCE (from Constants.h)"
 #endif
 
-#if TIME_LOCATION_PPS_SENSE != OFF && \
-    TIME_LOCATION_PPS_SENSE != LOW && \
-    TIME_LOCATION_PPS_SENSE != HIGH && \
-    TIME_LOCATION_PPS_SENSE != BOTH
+#if TIME_LOCATION_SOURCE_FALLBACK != OFF
+  #if (TIME_LOCATION_SOURCE_FALLBACK < TLS_FIRST && TIME_LOCATION_SOURCE_FALLBACK > TLS_LAST) || \
+      TIME_LOCATION_SOURCE_FALLBACK == GPS || TIME_LOCATION_SOURCE_FALLBACK == NTP || \
+      TIME_LOCATION_SOURCE_FALLBACK == TIME_LOCATION_SOURCE
+    #error "Configuration (Config.h): Setting TIME_LOCATION_SOURCE_FALLBACK unknown, use OFF or valid alternate TIME LOCATION SOURCE (except GPS or NTP, from Constants.h)"
+  #endif
+#endif
+
+#if (TIME_LOCATION_PPS_SENSE) != OFF && \
+    (TIME_LOCATION_PPS_SENSE) != LOW && \
+    (TIME_LOCATION_PPS_SENSE) != HIGH && \
+    (TIME_LOCATION_PPS_SENSE) != BOTH
   #error "Configuration (Config.h): Setting TIME_LOCATION_PPS_SENSE unknown, use OFF or LOW or HIGH or BOTH."
 #endif
 
@@ -354,8 +462,8 @@
   #error "Configuration (Config.h): Setting PEC_SENSE unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
 #endif
 
-#if PEC_BUFFER_SIZE_LIMIT < 0 || PEC_BUFFER_SIZE_LIMIT > 30000
-  #error "Configuration (Config.h): Setting PEC_BUFFER_SIZE_LIMIT unknown, use the value 0 to disable or 1 to 30000 (seconds.)"
+#if (PEC_BUFFER_SIZE_LIMIT != 0) && (PEC_BUFFER_SIZE_LIMIT < 61 && PEC_BUFFER_SIZE_LIMIT > 30000)
+  #error "Configuration (Config.h): Setting PEC_BUFFER_SIZE_LIMIT unknown, use the value 0 to disable or 61 to 30000 (seconds.)"
 #endif
 
 // SLEWING BEHAVIOUR
@@ -422,8 +530,19 @@
   #error "Configuration (Config.h): Setting PIER_SIDE_SYNC_CHANGE_SIDES unknown, use OFF or ON."
 #endif
 
+static_assert(AXIS1_LIMIT_SYNC == OFF || (AXIS1_LIMIT_SYNC >= 0 && AXIS1_LIMIT_SYNC <= 90),
+  "Configuration (Config.h): Setting AXIS1_LIMIT_SYNC unknown, use OFF or value in the range 0 to 90.");
+
+static_assert(AXIS2_LIMIT_SYNC == OFF || (AXIS2_LIMIT_SYNC >= 0 && AXIS2_LIMIT_SYNC <= 90),
+  "Configuration (Config.h): Setting AXIS2_LIMIT_SYNC unknown, use OFF or value in the range 0 to 90.");
+
+#if PIER_SIDE_SYNC_CHANGE_SIDES == ON
+  static_assert(AXIS1_LIMIT_SYNC == OFF && AXIS2_LIMIT_SYNC == OFF,
+    "Configuration (Config.h): Enabling AXIS1_LIMIT_SYNC or AXIS2_LIMIT_SYNC requires PIER_SIDE_SYNC_CHANGE_SIDES to be OFF.");
+#endif
+
 #if PIER_SIDE_PREFERRED_DEFAULT < PIER_SIDE_FIRST && PIER_SIDE_PREFERRED_DEFAULT > PIER_SIDE_LAST
-  #error "Configuration (Config.h): Setting PIER_SIDE_PREFERRED_DEFAULT unknown, use EAST or WEST or BEST."
+  #error "Configuration (Config.h): Setting PIER_SIDE_PREFERRED_DEFAULT unknown, use EAST or WEST or BEST or AUTOMATIC."
 #endif
 
 #if PIER_SIDE_PREFERRED_MEMORY != OFF && PIER_SIDE_PREFERRED_MEMORY != ON
@@ -431,8 +550,10 @@
 #endif
 
 // PARKING BEHAVIOUR
-#if PARK_STRICT != ON && PARK_STRICT != OFF
-  #error "Configuration (Config.h): Setting PARK_STRICT unknown, use OFF or ON."
+#ifdef PARK_STRICT
+  #if PARK_STRICT == ON
+    #error "Configuration (Config.h): PARK_STRICT is obsolete. Remove it and use the startup authority / parking policy defaults instead."
+  #endif
 #endif
 
 // ROTATOR ---------------------------------------
@@ -440,7 +561,8 @@
 // AXIS3 ROTATOR
 #if AXIS3_DRIVER_MODEL != OFF && \
     (AXIS3_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS3_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
-    (AXIS3_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS3_DRIVER_MODEL > SERVO_DRIVER_LAST)
+    (AXIS3_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS3_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
+    (AXIS3_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS3_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS3_DRIVER_MODEL unknown, use OFF or a valid DRIVER (from Constants.h)"
 #endif
 
@@ -527,7 +649,8 @@
 // AXIS4 FOCUSER
 #if AXIS4_DRIVER_MODEL != OFF && \
     (AXIS4_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS4_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
-    (AXIS4_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS4_DRIVER_MODEL > SERVO_DRIVER_LAST)
+    (AXIS4_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS4_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
+    (AXIS4_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS4_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS4_DRIVER_MODEL unknown, use OFF or a valid DRIVER (from Constants.h)"
 #endif
 
@@ -535,8 +658,8 @@
   #error "Configuration (Config.h): Setting AXIS4_SLEW_RATE_MINIMUM out of range, use a value between 5 and 600"
 #endif
 
-#if AXIS4_SLEW_RATE_DESIRED < 200 || AXIS4_SLEW_RATE_DESIRED > 5000
-  #error "Configuration (Config.h): Setting AXIS4_SLEW_RATE_DESIRED out of range, use a value between 200 and 5000"
+#if AXIS4_SLEW_RATE_BASE_DESIRED < 200 || AXIS4_SLEW_RATE_BASE_DESIRED > 5000
+  #error "Configuration (Config.h): Setting AXIS4_SLEW_RATE_BASE_DESIRED out of range, use a value between 200 and 5000"
 #endif
 
 #if AXIS4_DRIVER_STATUS != OFF && AXIS4_DRIVER_STATUS != ON && AXIS4_DRIVER_STATUS != HIGH && AXIS4_DRIVER_STATUS != LOW
@@ -550,6 +673,10 @@
 #if AXIS4_POWER_DOWN != ON && AXIS4_POWER_DOWN != OFF
   #error "Configuration (Config.h): Setting AXIS4_POWER_DOWN unknown, use OFF or ON."
 #endif
+#if AXIS4_POWER_DOWN == ON && (AXIS4_ENABLE_PIN == OFF || AXIS4_ENABLE_PIN == SHARED) && \
+    (AXIS4_DRIVER_MODEL < TMC_DRIVER_FIRST || AXIS4_DRIVER_MODEL > STEP_DIR_DRIVER_LAST)
+  #error "Configuration (Config.h): AXIS4_POWER_DOWN requires a dedicated enable pin or a software-controlled step/dir TMC driver."
+#endif
 
 #if AXIS4_LIMIT_MIN < 0 || AXIS4_LIMIT_MIN > 500
   #error "Configuration (Config.h): Setting AXIS4_LIMIT_MIN unknown, use value in the range 0 to 500 (mm.)"
@@ -559,15 +686,19 @@
   #error "Configuration (Config.h): Setting AXIS4_LIMIT_MAX unknown, use value in the range AXIS4_LIMIT_MIN to 500 (mm.)"
 #endif
 
+#if AXIS4_HOME_DEFAULT != MINIMUM && AXIS4_HOME_DEFAULT != MIDDLE && AXIS4_HOME_DEFAULT != MAXIMUM && (AXIS4_HOME_DEFAULT < 0 || AXIS4_HOME_DEFAULT > 500000)
+  #error "Configuration (Config.h): Setting AXIS4_HOME_DEFAULT unknown, use MINIMUM (zero) or MIDDLE (half travel) or MAXIMUM (full travel) or the position in microns (0 to 500000.)"
+#endif 
+
 #if (AXIS4_SENSE_HOME) != OFF && (AXIS4_SENSE_HOME) < 0
   #error "Configuration (Config.h): Setting AXIS4_SENSE_HOME unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
 #endif
 
-#if AXIS4_SENSE_LIMIT_MIN != OFF && AXIS4_SENSE_LIMIT_MIN < 0
+#if (AXIS4_SENSE_LIMIT_MIN) != OFF && (AXIS4_SENSE_LIMIT_MIN) < 0
   #error "Configuration (Config.h): Setting AXIS4_SENSE_LIMIT_MIN unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
 #endif
 
-#if AXIS4_SENSE_LIMIT_MAX != OFF && AXIS4_SENSE_LIMIT_MAX < 0
+#if (AXIS4_SENSE_LIMIT_MAX) != OFF && (AXIS4_SENSE_LIMIT_MAX) < 0
   #error "Configuration (Config.h): Setting AXIS4_SENSE_LIMIT_MAX unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
 #endif
 
@@ -620,7 +751,8 @@
 // AXIS5 FOCUSER
 #if AXIS5_DRIVER_MODEL != OFF && \
     (AXIS5_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS5_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
-    (AXIS5_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS5_DRIVER_MODEL > SERVO_DRIVER_LAST)
+    (AXIS5_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS5_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
+    (AXIS5_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS5_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS5_DRIVER_MODEL unknown, use OFF or a valid DRIVER (from Constants.h)"
 #endif
 
@@ -628,8 +760,8 @@
   #error "Configuration (Config.h): Setting AXIS5_SLEW_RATE_MINIMUM out of range, use a value between 5 and 200"
 #endif
 
-#if AXIS5_SLEW_RATE_DESIRED < 200 || AXIS5_SLEW_RATE_DESIRED > 5000
-  #error "Configuration (Config.h): Setting AXIS5_SLEW_RATE_DESIRED out of range, use a value between 200 and 5000"
+#if AXIS5_SLEW_RATE_BASE_DESIRED < 200 || AXIS5_SLEW_RATE_BASE_DESIRED > 5000
+  #error "Configuration (Config.h): Setting AXIS5_SLEW_RATE_BASE_DESIRED out of range, use a value between 200 and 5000"
 #endif
 
 #if AXIS5_DRIVER_STATUS != OFF && AXIS5_DRIVER_STATUS != ON && AXIS5_DRIVER_STATUS != HIGH && AXIS5_DRIVER_STATUS != LOW
@@ -643,6 +775,10 @@
 #if AXIS5_POWER_DOWN != ON && AXIS5_POWER_DOWN != OFF
   #error "Configuration (Config.h): Setting AXIS5_POWER_DOWN unknown, use OFF or ON."
 #endif
+#if AXIS5_POWER_DOWN == ON && (AXIS5_ENABLE_PIN == OFF || AXIS5_ENABLE_PIN == SHARED) && \
+    (AXIS5_DRIVER_MODEL < TMC_DRIVER_FIRST || AXIS5_DRIVER_MODEL > STEP_DIR_DRIVER_LAST)
+  #error "Configuration (Config.h): AXIS5_POWER_DOWN requires a dedicated enable pin or a software-controlled step/dir TMC driver."
+#endif
 
 #if AXIS5_LIMIT_MIN < 0 || AXIS5_LIMIT_MIN > 500
   #error "Configuration (Config.h): Setting AXIS5_LIMIT_MIN unknown, use value in the range 0 to 500 (mm.)"
@@ -651,6 +787,10 @@
 #if AXIS5_LIMIT_MAX < AXIS5_LIMIT_MIN || AXIS5_LIMIT_MAX > 500
   #error "Configuration (Config.h): Setting AXIS5_LIMIT_MAX unknown, use value in the range AXIS5_LIMIT_MIN to 500 (mm.)"
 #endif
+
+#if AXIS5_HOME_DEFAULT != MINIMUM && AXIS5_HOME_DEFAULT != MIDDLE && AXIS5_HOME_DEFAULT != MAXIMUM && (AXIS5_HOME_DEFAULT < 0 || AXIS5_HOME_DEFAULT > 500000)
+  #error "Configuration (Config.h): Setting AXIS5_HOME_DEFAULT unknown, use MINIMUM (zero) or MIDDLE (half travel) or MAXIMUM (full travel) or the position in microns (0 to 500000.)"
+#endif 
 
 #if (AXIS5_SENSE_HOME) != OFF && (AXIS5_SENSE_HOME) < 0
   #error "Configuration (Config.h): Setting AXIS5_SENSE_HOME unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
@@ -713,7 +853,8 @@
 // AXIS6 FOCUSER
 #if AXIS6_DRIVER_MODEL != OFF && \
     (AXIS6_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS6_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
-    (AXIS6_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS6_DRIVER_MODEL > SERVO_DRIVER_LAST)
+    (AXIS6_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS6_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
+    (AXIS6_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS6_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS6_DRIVER_MODEL unknown, use OFF or a valid DRIVER (from Constants.h)"
 #endif
 
@@ -721,8 +862,8 @@
   #error "Configuration (Config.h): Setting AXIS6_SLEW_RATE_MINIMUM out of range, use a value between 5 and 200"
 #endif
 
-#if AXIS6_SLEW_RATE_DESIRED < 200 || AXIS6_SLEW_RATE_DESIRED > 5000
-  #error "Configuration (Config.h): Setting AXIS6_SLEW_RATE_DESIRED out of range, use a value between 200 and 5000"
+#if AXIS6_SLEW_RATE_BASE_DESIRED < 200 || AXIS6_SLEW_RATE_BASE_DESIRED > 5000
+  #error "Configuration (Config.h): Setting AXIS6_SLEW_RATE_BASE_DESIRED out of range, use a value between 200 and 5000"
 #endif
 
 #if AXIS6_DRIVER_STATUS != OFF && AXIS6_DRIVER_STATUS != ON && AXIS6_DRIVER_STATUS != HIGH && AXIS6_DRIVER_STATUS != LOW
@@ -736,6 +877,10 @@
 #if AXIS6_POWER_DOWN != ON && AXIS6_POWER_DOWN != OFF
   #error "Configuration (Config.h): Setting AXIS6_POWER_DOWN unknown, use OFF or ON."
 #endif
+#if AXIS6_POWER_DOWN == ON && (AXIS6_ENABLE_PIN == OFF || AXIS6_ENABLE_PIN == SHARED) && \
+    (AXIS6_DRIVER_MODEL < TMC_DRIVER_FIRST || AXIS6_DRIVER_MODEL > STEP_DIR_DRIVER_LAST)
+  #error "Configuration (Config.h): AXIS6_POWER_DOWN requires a dedicated enable pin or a software-controlled step/dir TMC driver."
+#endif
 
 #if AXIS6_LIMIT_MIN < 0 || AXIS6_LIMIT_MIN > 500
   #error "Configuration (Config.h): Setting AXIS6_LIMIT_MIN unknown, use value in the range 0 to 500 (mm.)"
@@ -744,6 +889,10 @@
 #if AXIS6_LIMIT_MAX < AXIS6_LIMIT_MIN || AXIS6_LIMIT_MAX > 500
   #error "Configuration (Config.h): Setting AXIS6_LIMIT_MAX unknown, use value in the range AXIS6_LIMIT_MIN to 500 (mm.)"
 #endif
+
+#if AXIS6_HOME_DEFAULT != MINIMUM && AXIS6_HOME_DEFAULT != MIDDLE && AXIS6_HOME_DEFAULT != MAXIMUM && (AXIS6_HOME_DEFAULT < 0 || AXIS6_HOME_DEFAULT > 500000)
+  #error "Configuration (Config.h): Setting AXIS6_HOME_DEFAULT unknown, use MINIMUM (zero) or MIDDLE (half travel) or MAXIMUM (full travel) or the position in microns (0 to 500000.)"
+#endif 
 
 #if (AXIS6_SENSE_HOME) != OFF && (AXIS6_SENSE_HOME) < 0
   #error "Configuration (Config.h): Setting AXIS6_SENSE_HOME unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
@@ -803,7 +952,8 @@
 // AXIS7 FOCUSER
 #if AXIS7_DRIVER_MODEL != OFF && \
     (AXIS7_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS7_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
-    (AXIS7_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS7_DRIVER_MODEL > SERVO_DRIVER_LAST)
+    (AXIS7_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS7_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
+    (AXIS7_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS7_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS7_DRIVER_MODEL unknown, use OFF or a valid DRIVER (from Constants.h)"
 #endif
 
@@ -811,8 +961,8 @@
   #error "Configuration (Config.h): Setting AXIS7_SLEW_RATE_MINIMUM out of range, use a value between 5 and 200"
 #endif
 
-#if AXIS7_SLEW_RATE_DESIRED < 200 || AXIS7_SLEW_RATE_DESIRED > 5000
-  #error "Configuration (Config.h): Setting AXIS7_SLEW_RATE_DESIRED out of range, use a value between 200 and 5000"
+#if AXIS7_SLEW_RATE_BASE_DESIRED < 200 || AXIS7_SLEW_RATE_BASE_DESIRED > 5000
+  #error "Configuration (Config.h): Setting AXIS7_SLEW_RATE_BASE_DESIRED out of range, use a value between 200 and 5000"
 #endif
 
 #if AXIS7_DRIVER_STATUS != OFF && AXIS7_DRIVER_STATUS != ON && AXIS7_DRIVER_STATUS != HIGH && AXIS7_DRIVER_STATUS != LOW
@@ -826,6 +976,10 @@
 #if AXIS7_POWER_DOWN != ON && AXIS7_POWER_DOWN != OFF
   #error "Configuration (Config.h): Setting AXIS7_POWER_DOWN unknown, use OFF or ON."
 #endif
+#if AXIS7_POWER_DOWN == ON && (AXIS7_ENABLE_PIN == OFF || AXIS7_ENABLE_PIN == SHARED) && \
+    (AXIS7_DRIVER_MODEL < TMC_DRIVER_FIRST || AXIS7_DRIVER_MODEL > STEP_DIR_DRIVER_LAST)
+  #error "Configuration (Config.h): AXIS7_POWER_DOWN requires a dedicated enable pin or a software-controlled step/dir TMC driver."
+#endif
 
 #if AXIS7_LIMIT_MIN < 0 || AXIS7_LIMIT_MIN > 500
   #error "Configuration (Config.h): Setting AXIS7_LIMIT_MIN unknown, use value in the range 0 to 500 (mm.)"
@@ -834,6 +988,10 @@
 #if AXIS7_LIMIT_MAX < AXIS7_LIMIT_MIN || AXIS7_LIMIT_MAX > 500
   #error "Configuration (Config.h): Setting AXIS7_LIMIT_MAX unknown, use value in the range AXIS7_LIMIT_MIN to 500 (mm.)"
 #endif
+
+#if AXIS7_HOME_DEFAULT != MINIMUM && AXIS7_HOME_DEFAULT != MIDDLE && AXIS7_HOME_DEFAULT != MAXIMUM && (AXIS7_HOME_DEFAULT < 0 || AXIS7_HOME_DEFAULT > 500000)
+  #error "Configuration (Config.h): Setting AXIS7_HOME_DEFAULT unknown, use MINIMUM (zero) or MIDDLE (half travel) or MAXIMUM (full travel) or the position in microns (0 to 500000.)"
+#endif 
 
 #if (AXIS7_SENSE_HOME) != OFF && (AXIS7_SENSE_HOME) < 0
   #error "Configuration (Config.h): Setting AXIS7_SENSE_HOME unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
@@ -893,7 +1051,8 @@
 // AXIS8 FOCUSER
 #if AXIS8_DRIVER_MODEL != OFF && \
     (AXIS8_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS8_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
-    (AXIS8_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS8_DRIVER_MODEL > SERVO_DRIVER_LAST)
+    (AXIS8_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS8_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
+    (AXIS8_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS8_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS8_DRIVER_MODEL unknown, use OFF or a valid DRIVER (from Constants.h)"
 #endif
 
@@ -901,8 +1060,8 @@
   #error "Configuration (Config.h): Setting AXIS8_SLEW_RATE_MINIMUM out of range, use a value between 5 and 200"
 #endif
 
-#if AXIS8_SLEW_RATE_DESIRED < 200 || AXIS8_SLEW_RATE_DESIRED > 5000
-  #error "Configuration (Config.h): Setting AXIS8_SLEW_RATE_DESIRED out of range, use a value between 200 and 5000"
+#if AXIS8_SLEW_RATE_BASE_DESIRED < 200 || AXIS8_SLEW_RATE_BASE_DESIRED > 5000
+  #error "Configuration (Config.h): Setting AXIS8_SLEW_RATE_BASE_DESIRED out of range, use a value between 200 and 5000"
 #endif
 
 #if AXIS8_DRIVER_STATUS != OFF && AXIS8_DRIVER_STATUS != ON && AXIS8_DRIVER_STATUS != HIGH && AXIS8_DRIVER_STATUS != LOW
@@ -916,6 +1075,10 @@
 #if AXIS8_POWER_DOWN != ON && AXIS8_POWER_DOWN != OFF
   #error "Configuration (Config.h): Setting AXIS8_POWER_DOWN unknown, use OFF or ON."
 #endif
+#if AXIS8_POWER_DOWN == ON && (AXIS8_ENABLE_PIN == OFF || AXIS8_ENABLE_PIN == SHARED) && \
+    (AXIS8_DRIVER_MODEL < TMC_DRIVER_FIRST || AXIS8_DRIVER_MODEL > STEP_DIR_DRIVER_LAST)
+  #error "Configuration (Config.h): AXIS8_POWER_DOWN requires a dedicated enable pin or a software-controlled step/dir TMC driver."
+#endif
 
 #if AXIS8_LIMIT_MIN < 0 || AXIS8_LIMIT_MIN > 500
   #error "Configuration (Config.h): Setting AXIS8_LIMIT_MIN unknown, use value in the range 0 to 500 (mm.)"
@@ -924,6 +1087,10 @@
 #if AXIS8_LIMIT_MAX < AXIS8_LIMIT_MIN || AXIS8_LIMIT_MAX > 500
   #error "Configuration (Config.h): Setting AXIS8_LIMIT_MAX unknown, use value in the range AXIS8_LIMIT_MIN to 500 (mm.)"
 #endif
+
+#if AXIS8_HOME_DEFAULT != MINIMUM && AXIS8_HOME_DEFAULT != MIDDLE && AXIS8_HOME_DEFAULT != MAXIMUM && (AXIS8_HOME_DEFAULT < 0 || AXIS8_HOME_DEFAULT > 500000)
+  #error "Configuration (Config.h): Setting AXIS8_HOME_DEFAULT unknown, use MINIMUM (zero) or MIDDLE (half travel) or MAXIMUM (full travel) or the position in microns (0 to 500000.)"
+#endif 
 
 #if (AXIS8_SENSE_HOME) != OFF && (AXIS8_SENSE_HOME) < 0
   #error "Configuration (Config.h): Setting AXIS8_SENSE_HOME unknown, use OFF or HIGH/LOW and HYST() and/or THLD() as described in comments."
@@ -983,7 +1150,8 @@
 // AXIS9 FOCUSER
 #if AXIS9_DRIVER_MODEL != OFF && \
     (AXIS9_DRIVER_MODEL < STEP_DIR_DRIVER_FIRST || AXIS9_DRIVER_MODEL > STEP_DIR_DRIVER_LAST) && \
-    (AXIS9_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS9_DRIVER_MODEL > SERVO_DRIVER_LAST)
+    (AXIS9_DRIVER_MODEL < SERVO_DRIVER_FIRST || AXIS9_DRIVER_MODEL > SERVO_DRIVER_LAST) && \
+    (AXIS9_DRIVER_MODEL < MOTOR_DRIVER_FIRST || AXIS9_DRIVER_MODEL > MOTOR_DRIVER_LAST)
   #error "Configuration (Config.h): Setting AXIS9_DRIVER_MODEL unknown, use OFF or a valid DRIVER (from Constants.h)"
 #endif
 
@@ -991,8 +1159,8 @@
   #error "Configuration (Config.h): Setting AXIS9_SLEW_RATE_MINIMUM out of range, use a value between 5 and 200"
 #endif
 
-#if AXIS9_SLEW_RATE_DESIRED < 200 || AXIS9_SLEW_RATE_DESIRED > 5000
-  #error "Configuration (Config.h): Setting AXIS9_SLEW_RATE_DESIRED out of range, use a value between 200 and 5000"
+#if AXIS9_SLEW_RATE_BASE_DESIRED < 200 || AXIS9_SLEW_RATE_BASE_DESIRED > 5000
+  #error "Configuration (Config.h): Setting AXIS9_SLEW_RATE_BASE_DESIRED out of range, use a value between 200 and 5000"
 #endif
 
 #if AXIS9_DRIVER_STATUS != OFF && AXIS9_DRIVER_STATUS != ON && AXIS9_DRIVER_STATUS != HIGH && AXIS9_DRIVER_STATUS != LOW
@@ -1006,6 +1174,10 @@
 #if AXIS9_POWER_DOWN != ON && AXIS9_POWER_DOWN != OFF
   #error "Configuration (Config.h): Setting AXIS9_POWER_DOWN unknown, use OFF or ON."
 #endif
+#if AXIS9_POWER_DOWN == ON && (AXIS9_ENABLE_PIN == OFF || AXIS9_ENABLE_PIN == SHARED) && \
+    (AXIS9_DRIVER_MODEL < TMC_DRIVER_FIRST || AXIS9_DRIVER_MODEL > STEP_DIR_DRIVER_LAST)
+  #error "Configuration (Config.h): AXIS9_POWER_DOWN requires a dedicated enable pin or a software-controlled step/dir TMC driver."
+#endif
 
 #if AXIS9_LIMIT_MIN < 0 || AXIS9_LIMIT_MIN > 500
   #error "Configuration (Config.h): Setting AXIS9_LIMIT_MIN unknown, use value in the range 0 to 500 (mm.)"
@@ -1013,6 +1185,10 @@
 
 #if AXIS9_LIMIT_MAX < AXIS9_LIMIT_MIN || AXIS9_LIMIT_MAX > 500
   #error "Configuration (Config.h): Setting AXIS9_LIMIT_MAX unknown, use value in the range AXIS9_LIMIT_MIN to 500 (mm.)"
+#endif
+
+#if AXIS9_HOME_DEFAULT != MINIMUM && AXIS9_HOME_DEFAULT != MIDDLE && AXIS9_HOME_DEFAULT != MAXIMUM && (AXIS9_HOME_DEFAULT < 0 || AXIS9_HOME_DEFAULT > 500000)
+  #error "Configuration (Config.h): Setting AXIS9_HOME_DEFAULT unknown, use MINIMUM (zero) or MIDDLE (half travel) or MAXIMUM (full travel) or the position in microns (0 to 500000.)"
 #endif
 
 #if (AXIS9_SENSE_HOME) != OFF && (AXIS9_SENSE_HOME) < 0
@@ -1077,8 +1253,8 @@
 
 // FOCUSER TEMPERATURE ---------------------------
 #if FOCUSER_TEMPERATURE != OFF && \
-    FOCUSER_TEMPERATURE & DS_MASK != DS18B20 && \
-    FOCUSER_TEMPERATURE & DS_MASK != DS18S20 && \
+    (FOCUSER_TEMPERATURE & DS_MASK) != DS18B20 && \
+    (FOCUSER_TEMPERATURE & DS_MASK) != DS18S20 && \
     (FOCUSER_TEMPERATURE < TEMPERATURE_FIRST || FOCUSER_TEMPERATURE > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FOCUSER_TEMPERATURE unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif
@@ -1088,73 +1264,128 @@
 #if FEATURE1_PURPOSE != OFF && (FEATURE1_PURPOSE < AUX_FEATURE_PURPOSE_FIRST || FEATURE1_PURPOSE > AUX_FEATURE_PURPOSE_LAST)
   #error "Configuration (Config.h): Setting FEATURE1_PURPOSE unknown, use OFF or AUXILIARY FEATURE purpose (from Constants.h)"
 #endif
+#if FEATURE1_VALUE_DEFAULT != OFF && FEATURE1_VALUE_DEFAULT != ON && (FEATURE1_VALUE_DEFAULT < 0 || FEATURE1_VALUE_DEFAULT > 255)
+  #error "Configuration (Config.h): Setting FEATURE1_VALUE_DEFAULT unknown, use OFF or ON or a value 0 to 255"
+#endif
+#if FEATURE1_VALUE_MEMORY != OFF && FEATURE1_VALUE_MEMORY != ON
+  #error "Configuration (Config.h): Setting FEATURE1_VALUE_MEMORY unknown, use OFF or ON"
+#endif
+
 #if FEATURE2_PURPOSE != OFF && (FEATURE2_PURPOSE < AUX_FEATURE_PURPOSE_FIRST || FEATURE2_PURPOSE > AUX_FEATURE_PURPOSE_LAST)
   #error "Configuration (Config.h): Setting FEATURE2_PURPOSE unknown, use OFF or AUXILIARY FEATURE purpose (from Constants.h)"
 #endif
+#if FEATURE2_VALUE_DEFAULT != OFF && FEATURE2_VALUE_DEFAULT != ON && (FEATURE2_VALUE_DEFAULT < 0 || FEATURE2_VALUE_DEFAULT > 255)
+  #error "Configuration (Config.h): Setting FEATURE2_VALUE_DEFAULT unknown, use OFF or ON or a value 0 to 255"
+#endif
+#if FEATURE2_VALUE_MEMORY != OFF && FEATURE2_VALUE_MEMORY != ON
+  #error "Configuration (Config.h): Setting FEATURE2_VALUE_MEMORY unknown, use OFF or ON"
+#endif
+
 #if FEATURE3_PURPOSE != OFF && (FEATURE3_PURPOSE < AUX_FEATURE_PURPOSE_FIRST || FEATURE3_PURPOSE > AUX_FEATURE_PURPOSE_LAST)
   #error "Configuration (Config.h): Setting FEATURE3_PURPOSE unknown, use OFF or AUXILIARY FEATURE purpose (from Constants.h)"
 #endif
+#if FEATURE3_VALUE_DEFAULT != OFF && FEATURE3_VALUE_DEFAULT != ON && (FEATURE3_VALUE_DEFAULT < 0 || FEATURE3_VALUE_DEFAULT > 255)
+  #error "Configuration (Config.h): Setting FEATURE3_VALUE_DEFAULT unknown, use OFF or ON or a value 0 to 255"
+#endif
+#if FEATURE3_VALUE_MEMORY != OFF && FEATURE3_VALUE_MEMORY != ON
+  #error "Configuration (Config.h): Setting FEATURE3_VALUE_MEMORY unknown, use OFF or ON"
+#endif
+
 #if FEATURE4_PURPOSE != OFF && (FEATURE4_PURPOSE < AUX_FEATURE_PURPOSE_FIRST || FEATURE4_PURPOSE > AUX_FEATURE_PURPOSE_LAST)
   #error "Configuration (Config.h): Setting FEATURE4_PURPOSE unknown, use OFF or AUXILIARY FEATURE purpose (from Constants.h)"
 #endif
+#if FEATURE4_VALUE_DEFAULT != OFF && FEATURE4_VALUE_DEFAULT != ON && (FEATURE4_VALUE_DEFAULT < 0 || FEATURE4_VALUE_DEFAULT > 255)
+  #error "Configuration (Config.h): Setting FEATURE4_VALUE_DEFAULT unknown, use OFF or ON or a value 0 to 255"
+#endif
+#if FEATURE4_VALUE_MEMORY != OFF && FEATURE4_VALUE_MEMORY != ON
+  #error "Configuration (Config.h): Setting FEATURE4_VALUE_MEMORY unknown, use OFF or ON"
+#endif
+
 #if FEATURE5_PURPOSE != OFF && (FEATURE5_PURPOSE < AUX_FEATURE_PURPOSE_FIRST || FEATURE5_PURPOSE > AUX_FEATURE_PURPOSE_LAST)
   #error "Configuration (Config.h): Setting FEATURE5_PURPOSE unknown, use OFF or AUXILIARY FEATURE purpose (from Constants.h)"
 #endif
+#if FEATURE5_VALUE_DEFAULT != OFF && FEATURE5_VALUE_DEFAULT != ON && (FEATURE5_VALUE_DEFAULT < 0 || FEATURE5_VALUE_DEFAULT > 255)
+  #error "Configuration (Config.h): Setting FEATURE5_VALUE_DEFAULT unknown, use OFF or ON or a value 0 to 255"
+#endif
+#if FEATURE5_VALUE_MEMORY != OFF && FEATURE5_VALUE_MEMORY != ON
+  #error "Configuration (Config.h): Setting FEATURE5_VALUE_MEMORY unknown, use OFF or ON"
+#endif
+
 #if FEATURE6_PURPOSE != OFF && (FEATURE6_PURPOSE < AUX_FEATURE_PURPOSE_FIRST || FEATURE6_PURPOSE > AUX_FEATURE_PURPOSE_LAST)
   #error "Configuration (Config.h): Setting FEATURE6_PURPOSE unknown, use OFF or AUXILIARY FEATURE purpose (from Constants.h)"
 #endif
+#if FEATURE6_VALUE_DEFAULT != OFF && FEATURE6_VALUE_DEFAULT != ON && (FEATURE6_VALUE_DEFAULT < 0 || FEATURE6_VALUE_DEFAULT > 255)
+  #error "Configuration (Config.h): Setting FEATURE6_VALUE_DEFAULT unknown, use OFF or ON or a value 0 to 255"
+#endif
+#if FEATURE6_VALUE_MEMORY != OFF && FEATURE6_VALUE_MEMORY != ON
+  #error "Configuration (Config.h): Setting FEATURE6_VALUE_MEMORY unknown, use OFF or ON"
+#endif
+
 #if FEATURE7_PURPOSE != OFF && (FEATURE7_PURPOSE < AUX_FEATURE_PURPOSE_FIRST || FEATURE7_PURPOSE > AUX_FEATURE_PURPOSE_LAST)
   #error "Configuration (Config.h): Setting FEATURE7_PURPOSE unknown, use OFF or AUXILIARY FEATURE purpose (from Constants.h)"
 #endif
+#if FEATURE7_VALUE_DEFAULT != OFF && FEATURE7_VALUE_DEFAULT != ON && (FEATURE7_VALUE_DEFAULT < 0 || FEATURE7_VALUE_DEFAULT > 255)
+  #error "Configuration (Config.h): Setting FEATURE7_VALUE_DEFAULT unknown, use OFF or ON or a value 0 to 255"
+#endif
+#if FEATURE7_VALUE_MEMORY != OFF && FEATURE7_VALUE_MEMORY != ON
+  #error "Configuration (Config.h): Setting FEATURE7_VALUE_MEMORY unknown, use OFF or ON"
+#endif
+
 #if FEATURE8_PURPOSE != OFF && (FEATURE8_PURPOSE < AUX_FEATURE_PURPOSE_FIRST || FEATURE8_PURPOSE > AUX_FEATURE_PURPOSE_LAST)
   #error "Configuration (Config.h): Setting FEATURE8_PURPOSE unknown, use OFF or AUXILIARY FEATURE purpose (from Constants.h)"
 #endif
+#if FEATURE8_VALUE_DEFAULT != OFF && FEATURE8_VALUE_DEFAULT != ON && (FEATURE8_VALUE_DEFAULT < 0 || FEATURE8_VALUE_DEFAULT > 255)
+  #error "Configuration (Config.h): Setting FEATURE8_VALUE_DEFAULT unknown, use OFF or ON or a value 0 to 255"
+#endif
+#if FEATURE8_VALUE_MEMORY != OFF && FEATURE8_VALUE_MEMORY != ON
+  #error "Configuration (Config.h): Setting FEATURE8_VALUE_MEMORY unknown, use OFF or ON"
+#endif
 
 #if FEATURE1_TEMP != OFF && \
-    FEATURE1_TEMP & DS_MASK != DS18B20 && \
-    FEATURE1_TEMP & DS_MASK != DS18S20 && \
+    (FEATURE1_TEMP & DS_MASK) != DS18B20 && \
+    (FEATURE1_TEMP & DS_MASK) != DS18S20 && \
     (FEATURE1_TEMP < TEMPERATURE_FIRST || FEATURE1_TEMP > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FEATURE1_TEMP unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif
 #if FEATURE2_TEMP != OFF && \
-    FEATURE2_TEMP & DS_MASK != DS18B20 && \
-    FEATURE2_TEMP & DS_MASK != DS18S20 && \
+    (FEATURE2_TEMP & DS_MASK) != DS18B20 && \
+    (FEATURE2_TEMP & DS_MASK) != DS18S20 && \
     (FEATURE2_TEMP < TEMPERATURE_FIRST || FEATURE2_TEMP > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FEATURE2_TEMP unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif
 #if FEATURE3_TEMP != OFF && \
-    FEATURE3_TEMP & DS_MASK != DS18B20 && \
-    FEATURE3_TEMP & DS_MASK != DS18S20 && \
+    (FEATURE3_TEMP & DS_MASK) != DS18B20 && \
+    (FEATURE3_TEMP & DS_MASK) != DS18S20 && \
     (FEATURE3_TEMP < TEMPERATURE_FIRST || FEATURE3_TEMP > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FEATURE3_TEMP unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif
 #if FEATURE4_TEMP != OFF && \
-    FEATURE4_TEMP & DS_MASK != DS18B20 && \
-    FEATURE4_TEMP & DS_MASK != DS18S20 && \
+    (FEATURE4_TEMP & DS_MASK) != DS18B20 && \
+    (FEATURE4_TEMP & DS_MASK) != DS18S20 && \
     (FEATURE4_TEMP < TEMPERATURE_FIRST || FEATURE4_TEMP > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FEATURE4_TEMP unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif
 #if FEATURE5_TEMP != OFF && \
-    FEATURE5_TEMP & DS_MASK != DS18B20 && \
-    FEATURE5_TEMP & DS_MASK != DS18S20 && \
+    (FEATURE5_TEMP & DS_MASK) != DS18B20 && \
+    (FEATURE5_TEMP & DS_MASK) != DS18S20 && \
     (FEATURE5_TEMP < TEMPERATURE_FIRST || FEATURE5_TEMP > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FEATURE5_TEMP unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif
 #if FEATURE6_TEMP != OFF && \
-    FEATURE6_TEMP & DS_MASK != DS18B20 && \
-    FEATURE6_TEMP & DS_MASK != DS18S20 && \
+    (FEATURE6_TEMP & DS_MASK) != DS18B20 && \
+    (FEATURE6_TEMP & DS_MASK) != DS18S20 && \
     (FEATURE6_TEMP < TEMPERATURE_FIRST || FEATURE6_TEMP > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FEATURE6_TEMP unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif
 #if FEATURE7_TEMP != OFF && \
-    FEATURE7_TEMP & DS_MASK != DS18B20 && \
-    FEATURE7_TEMP & DS_MASK != DS18S20 && \
+    (FEATURE7_TEMP & DS_MASK) != DS18B20 && \
+    (FEATURE7_TEMP & DS_MASK) != DS18S20 && \
     (FEATURE7_TEMP < TEMPERATURE_FIRST || FEATURE7_TEMP > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FEATURE7_TEMP unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif
 #if FEATURE8_TEMP != OFF && \
-    FEATURE8_TEMP & DS_MASK != DS18B20 && \
-    FEATURE8_TEMP & DS_MASK != DS18S20 && \
+    (FEATURE8_TEMP & DS_MASK) != DS18B20 && \
+    (FEATURE8_TEMP & DS_MASK) != DS18S20 && \
     (FEATURE8_TEMP < TEMPERATURE_FIRST || FEATURE8_TEMP > TEMPERATURE_LAST)
   #error "Configuration (Config.h): Setting FEATURE8_TEMP unknown, use OFF or TEMPERATURE device (from Constants.h)"
 #endif

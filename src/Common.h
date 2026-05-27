@@ -5,16 +5,21 @@
 #define SERIAL_LOCAL_MODE ON
 #define STANDARD_IPSERIAL_CHANNEL ON
 #define PERSISTENT_IPSERIAL_CHANNEL ON
+
 #include <Arduino.h>
 #include "Constants.h"
 #include "lib/Constants.h"
-#include "Config.common.h"
+#include "../Config.h"
+#include "Config.defaults.h"
+
+#ifdef USES_HW_SPI
+#include <SPI.h>
+#endif
+
 #include "HAL/HAL.h"
 #include "lib/Macros.h"
 #include "pinmaps/Models.h"
 #include "lib/debug/Debug.h"
-#include "lib/nv/NV.h"
-extern NVS nv;
 
 #if ST4_HAND_CONTROL == ON
   #define SERIAL_ST4_MASTER ON
@@ -54,6 +59,10 @@ extern NVS nv;
   #endif
 #endif
 
+#if FEATURE1_PURPOSE == COVER_SWITCH || FEATURE2_PURPOSE == COVER_SWITCH || FEATURE3_PURPOSE == COVER_SWITCH || FEATURE4_PURPOSE == COVER_SWITCH || FEATURE5_PURPOSE == COVER_SWITCH || FEATURE6_PURPOSE == COVER_SWITCH || FEATURE7_PURPOSE == COVER_SWITCH || FEATURE8_PURPOSE == COVER_SWITCH
+  #define COVER_SWITCH_SERVO_PRESENT
+#endif
+
 #if (FOCUSER_TEMPERATURE & DS_MASK) == DS1820 || (FOCUSER_TEMPERATURE & DS_MASK) == DS18S20
   #ifndef DS1820_DEVICES_PRESENT
     #define DS1820_DEVICES_PRESENT
@@ -65,5 +74,3 @@ extern NVS nv;
     #define THERMISTOR_DEVICES_PRESENT
   #endif
 #endif
-
-#include "lib/gpio/Gpio.h"

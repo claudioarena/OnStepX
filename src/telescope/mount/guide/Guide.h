@@ -33,7 +33,7 @@ class Guide {
   public:
     void init();
 
-    bool command(char *reply, char *command, char *parameter, bool *supressFrame, bool *numericReply, CommandError *commandError);
+    bool command(char *reply, char *command, char *parameter, bool *suppressFrame, bool *numericReply, CommandError *commandError);
 
     // start guide at a given direction and rate on Axis1
     CommandError startAxis1(GuideAction guideAction, GuideRateSelect rateSelect, unsigned long guideTimeLimit);
@@ -66,9 +66,7 @@ class Guide {
 
     // returns true if a guide is happening
     inline bool active() {
-      return
-        (guideActionAxis1 == GA_FORWARD || guideActionAxis1 == GA_REVERSE ||
-         guideActionAxis2 == GA_FORWARD || guideActionAxis2 == GA_REVERSE) && !activePulseGuide(); 
+      return (guideActionAxis1 != GA_NONE || guideActionAxis2 != GA_NONE) && !activePulseGuide(); 
     }
 
     // returns true if any guide is happening on Axis1
@@ -129,6 +127,7 @@ class Guide {
     unsigned long guideFinishTimeAxis1 = 0;
     unsigned long guideFinishTimeAxis2 = 0;
 
+    uint32_t nvKey;
 };
 
 extern Guide guide;

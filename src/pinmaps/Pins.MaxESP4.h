@@ -4,7 +4,6 @@
 
 #if defined(ESP32)
 
-// Serial ports (see Pins.defaults.h for SERIAL_A)
 // Serial0: RX Pin GPIO3, TX Pin GPIO1 (to USB serial adapter)
 // Serial1: RX1 Pin GPIO10, TX1 Pin GPIO9 (on SPI Flash pins, must be moved to be used)
 // Serial2: RX2 Pin GPIO16, TX2 Pin GPIO17
@@ -17,20 +16,21 @@
 #endif
 
 // Use the following settings for any TMC UART driver (TMC2209) that may be present
-#if defined(STEP_DIR_TMC_UART_PRESENT)
+#if defined(STEP_DIR_TMC_UART_PRESENT) || defined(SERVO_TMC2209_PRESENT)
   #define SERIAL_TMC_HARDWARE_UART
   #define SERIAL_TMC            Serial1          // Use a single hardware serial port to up to four drivers
   #define SERIAL_TMC_BAUD       460800           // Baud rate
   #define SERIAL_TMC_RX         39               // Recieving data
-  #define SERIAL_TMC_TX         4                // Transmit data
+  #ifndef SERIAL_TMC_TX
+    #define SERIAL_TMC_TX       4                // Transmit data
+  #endif
   #define SERIAL_TMC_ADDRESS_MAP(x) ((x==4)?2 : x) // Axis1(0) is 0, Axis2(1) is 1, Axis3(2) is 2, Axis4(3) is 3, Axis5(4) is 2
 #endif
 
-// Specify the ESP32 I2C pins
-#define I2C_SDA_PIN             21
-#define I2C_SCL_PIN             22
+// Uses default ESP32 I2C GPIO21 (SDA) and GPIO22 (SCL)
 
 // The multi-purpose pins (Aux3..Aux8 can be analog pwm/dac if supported)
+#define AUX2_PIN                39               // M3 pin TMC UART RX
 #define AUX3_PIN                14               // Home SW for Axis1
 #define AUX4_PIN                13               // Home SW for Axis2
 #define AUX5_PIN                1                // TX0 main USB, etc.
@@ -81,7 +81,9 @@
 #endif
 
 #define SHARED_DIRECTION_PINS                    // Hint that the direction pins are shared
-#define SHARED_ENABLE_PIN       5                // Hint that the enable pins are shared
+#ifndef SHARED_ENABLE_PIN
+  #define SHARED_ENABLE_PIN     5                // Hint that the enable pins are shared
+#endif
 
 // Axis1 RA/Azm step/dir driver
 #define AXIS1_ENABLE_PIN        SHARED           // Enable pin control
@@ -105,6 +107,9 @@
 #define AXIS2_DIR_PIN           26
 #ifndef AXIS2_SENSE_HOME_PIN
   #define AXIS2_SENSE_HOME_PIN  AUX4_PIN
+#endif
+#ifndef AXIS2_ENCODER_B_PIN
+  #define AXIS2_ENCODER_B_PIN   AUX2_PIN
 #endif
 
 // For rotator stepper driver

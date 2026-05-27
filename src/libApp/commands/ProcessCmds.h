@@ -17,11 +17,11 @@ class CommandProcessor {
     void poll();
 
     // pass along commands as required for processing
-    CommandError command(char *reply, char *command, char *parameter, bool *supressFrame, bool *numericReply);
+    CommandError command(char *reply, char *command, char *parameter, bool *suppressFrame, bool *numericReply);
 
   private:
     void logErrors(char *cmd, char *param, char *reply, CommandError e);
-    void appendChecksum(char *s);
+    void appendChecksum(char *s, size_t capacity);
 
     CommandError commandError      = CE_NONE;
     CommandError lastCommandError  = CE_NONE;

@@ -38,10 +38,11 @@
 #define roundPeriod(x) ((unsigned long)((x)+(double)0.5L))
 
 unsigned char _task_postpone = false;
-unsigned long _taskMasterFrequencyRatio = 16000000UL;
+volatile unsigned long _task_ppsAverageSubMicros = 16000000UL;
+double _task_masterFrequencyRatio = 1.0L;
 
 // Task object
-Task::Task(uint32_t period, uint32_t duration, bool repeat, uint8_t priority, void (*volatile callback)()) {
+Task::Task(uint32_t period, uint32_t duration, bool repeat, uint8_t priority, void (*callback)()) {
   idle = period == 0;
   this->period   = period;
   period_units   = PU_MILLIS;
@@ -50,8 +51,15 @@ Task::Task(uint32_t period, uint32_t duration, bool repeat, uint8_t priority, vo
   if (!repeat) immediate = false;
   this->priority = priority;
   this->callback = callback;
-  start_time     = millis();
-  next_task_time = start_time + period;
+
+  start_time = millis();
+  uint32_t spread_phase = 0;
+  if (repeat && period >= 4) {
+    uint32_t h = (uint32_t)(uintptr_t)callback ^ ((uint32_t)(uintptr_t)this >> 4) ^ start_time;
+    spread_phase = h % period;
+  }
+  next_task_time = start_time + spread_phase;
+
   strcpy(processName, "");
 }
 
@@ -85,14 +93,10 @@ bool Task::requestHardwareTimer(uint8_t num, uint8_t hwPriority) {
 
   unsigned long hardware_timer_period = period;
   if (period_units == PU_NONE) hardware_timer_period = 0; else
-  if (period_units == PU_MILLIS) hardware_timer_period *= 16000UL; else
-  if (period_units == PU_MICROS) hardware_timer_period *= 16UL;
-  
-  unsigned long temp = roundPeriod(hardware_timer_period*(_taskMasterFrequencyRatio/(double)16000000.0L));
-  noInterrupts();
-  hardware_timer_period = temp;
-  interrupts();
-  HAL_HWTIMER_PREPARE_PERIOD(num, hardware_timer_period);
+  if (period_units == PU_MILLIS) hardware_timer_period *= 16000U; else
+  if (period_units == PU_MICROS) hardware_timer_period *= 16U;
+
+  HAL_HWTIMER_PREPARE_PERIOD(num, roundPeriod((double)hardware_timer_period*_task_masterFrequencyRatio));
 
   bool success = true;
   switch (num) {
@@ -115,12 +119,15 @@ bool Task::requestHardwareTimer(uint8_t num, uint8_t hwPriority) {
   }
   if (!success) { DF("ERR: Task::requestHardwareTimer(), HAL_HWTIMER"); D(num); DLF("_INIT() failed"); return false; }
   hardware_timer = num;
+
   period = hardware_timer_period;
   period_units = PU_SUB_MICROS;
+  next_period = period;
+  next_period_units = PU_NONE;
   return true;
 }
 
-void Task::setCallback(void (*volatile callback)()) {
+void Task::setCallback(void (*callback)()) {
   this->callback = callback;
   noInterrupts();
   switch (hardware_timer) {
@@ -176,10 +183,7 @@ bool Task::poll() {
       // adopt next period
       if (next_period_units != PU_NONE) {
         time_to_next_task = 0;
-        unsigned long temp = roundPeriod(next_period*(_taskMasterFrequencyRatio/(double)16000000.0L));
-        noInterrupts();
-        period = temp;
-        interrupts();
+        period = roundPeriod((double)next_period*_task_masterFrequencyRatio);
         period_units = next_period_units;
         next_period_units = PU_NONE;
       }
@@ -197,7 +201,10 @@ bool Task::poll() {
 }
 
 void Task::refreshPeriod() {
-  if (hardware_timer) setHardwareTimerPeriod();
+  if (hardware_timer) {
+    next_period_units = PU_SUB_MICROS;
+    setHardwareTimerPeriod();
+  }
 }
 
 void Task::setPeriod(unsigned long period, PeriodUnits units) {
@@ -213,6 +220,7 @@ void Task::setPeriod(unsigned long period, PeriodUnits units) {
       this->period = period;
       period_units = units;
       next_period_units = PU_NONE;
+      if (period_units == PU_MICROS) next_task_time = micros() + period; else next_task_time = millis() + period;
     } else {
       idle = false;
       next_period = period;
@@ -261,7 +269,7 @@ void Task::setRepeat(bool repeat) {
   this->repeat = repeat;
 }
 
-void Task::setPriority(bool priority) {
+void Task::setPriority(uint8_t priority) {
   if (hardware_timer) return;
   this->priority = priority;
 }
@@ -297,6 +305,7 @@ float Task::getArrivalMax() {
 float Task::getRuntimeTotal() {
   if (hardware_timer) { noInterrupts(); total_runtime = _task_total_runtime[hardware_timer-1]; _task_total_runtime[hardware_timer-1] = 0; total_runtime_count=_task_total_runtime_count[hardware_timer-1]; interrupts(); };
   float value = total_runtime;
+  if (value > 2147483647) value = 0.0;
   total_runtime = 0;
   return value;
 }
@@ -320,12 +329,10 @@ void Task::setHardwareTimerPeriod() {
     if (next_period_units == PU_MILLIS) next_period *= 16000UL; else if (next_period_units == PU_MICROS) next_period *= 16UL;
     next_period_units = PU_NONE;
     period_units = PU_SUB_MICROS;
-    unsigned long temp = roundPeriod(next_period*(_taskMasterFrequencyRatio/(double)16000000.0L));
+
     unsigned long lastPeriod = period;
 
-    noInterrupts();
-    period = temp;
-    interrupts();
+    period = roundPeriod((double)next_period*_task_masterFrequencyRatio);
     HAL_HWTIMER_PREPARE_PERIOD(hardware_timer, period);
 
     // if the current period is > 0.1 seconds and the new period < lastPeriod adopt the new rate immediately
@@ -341,15 +348,18 @@ void Task::setHardwareTimerPeriod() {
 }
 
 void tasksMonitor() {
-  static unsigned long _lastTaskMasterFrequencyRatio = 16000000UL;
-  if (_lastTaskMasterFrequencyRatio != _taskMasterFrequencyRatio) {
-    _lastTaskMasterFrequencyRatio = _taskMasterFrequencyRatio;
+  static unsigned long _lastPpsAverageSubMicros = 16000000UL;
+  if (_lastPpsAverageSubMicros != _task_ppsAverageSubMicros) {
+    _task_masterFrequencyRatio = (double)_task_ppsAverageSubMicros/16000000.0L;
+
     uint8_t handle = tasks.getFirstHandle();
     for (int i = 0; i < TASKS_MAX; i++) {
       if (handle == 0) break;
       tasks.refreshPeriod(handle);
       handle = tasks.getNextHandle(handle);
     }
+
+    _lastPpsAverageSubMicros = _task_ppsAverageSubMicros;
   }
 }
 
@@ -361,7 +371,7 @@ Tasks::Tasks() {
   }
 
   // start the task monitor
-  tasks.add(1000, 0, true, 7, tasksMonitor, "TaskMtr");
+  tasks.add(1000, 0, true, 7, tasksMonitor, "TaskMon");
 }
 
 Tasks::~Tasks() {
@@ -371,7 +381,7 @@ Tasks::~Tasks() {
   }
 }
 
-uint8_t Tasks::add(uint32_t period, uint32_t duration, bool repeat, uint8_t priority, void (*volatile callback)()) {
+uint8_t Tasks::add(uint32_t period, uint32_t duration, bool repeat, uint8_t priority, void (*callback)()) {
   // check priority
   if (priority > 7) return false;
   if (priority > highest_priority) highest_priority = priority;
@@ -392,7 +402,7 @@ uint8_t Tasks::add(uint32_t period, uint32_t duration, bool repeat, uint8_t prio
   return e + 1;
 }
 
-uint8_t Tasks::add(uint32_t period, uint32_t duration, bool repeat, uint8_t priority, void (*volatile callback)(), const char name[]) {
+uint8_t Tasks::add(uint32_t period, uint32_t duration, bool repeat, uint8_t priority, void (*callback)(), const char name[]) {
   uint8_t handle = add(period, duration, repeat, priority, callback);
   setNameStr(handle, name);
   return handle;
@@ -414,7 +424,7 @@ bool Tasks::requestHardwareTimer(uint8_t handle, uint8_t hwPriority) {
   return false;
 }
 
-bool Tasks::setCallback(uint8_t handle, void (*volatile callback)()) {
+bool Tasks::setCallback(uint8_t handle, void (*callback)()) {
   if (handle != 0 && allocated[handle - 1]) {
     task[handle - 1]->setCallback(callback);
     return true;
@@ -430,6 +440,8 @@ bool Tasks::setTimingMode(uint8_t handle, TimingMode mode) {
 
 void Tasks::remove(uint8_t handle) {
   if (handle != 0 && allocated[handle - 1]) {
+    uint8_t hw_timer_number = task[handle - 1]->hardware_timer;
+    if (hw_timer_number) hardware_timer_allocated[hw_timer_number - 1] = false;
     delete task[handle - 1];
     allocated[handle - 1] = false;
     updateEventRange();
@@ -468,7 +480,7 @@ void Tasks::setFrequency(uint8_t handle, double freq) {
 }
 
 IRAM_ATTR void Tasks::setPeriodRatioSubMicros(unsigned long value) {
-  _taskMasterFrequencyRatio = value;
+  _task_ppsAverageSubMicros = value;
 }
 
 void Tasks::setDuration(uint8_t handle, unsigned long duration) {
@@ -517,12 +529,13 @@ uint8_t Tasks::getFirstHandle() {
 }
 
 uint8_t Tasks::getNextHandle(uint8_t handle) {
+  if (handle > highest_task) return 0;
   do {
     if (allocated[handle]) {
       return handle + 1;
     }
-  } while (++handle < highest_task);
-  return false;
+  } while (++handle <= highest_task);
+  return 0;
 }
 
 uint8_t Tasks::getHandleByName(const char name[]) {
@@ -567,41 +580,26 @@ uint8_t Tasks::getHandleByName(const char name[]) {
   }
 #endif
 
-#ifdef TASKS_HIGHER_PRIORITY_ONLY
-  void Tasks::yield() {
-    ::yield();
-    for (uint8_t priority = 0; priority <= highest_priority; priority++) {
-      uint8_t last_priority = highest_active_priority;
-      if (priority < highest_active_priority) {
-        highest_active_priority = priority;
-        for (uint8_t i = 0; i <= highest_task; i++) {
-          if (++number[priority] > highest_task) number[priority] = 0;
-          if (allocated[number[priority]]) {
-            if (task[number[priority]]->getPriority() == priority) {
-              if (task[number[priority]]->isDurationComplete()) { remove(number[priority] + 1); highest_active_priority = last_priority; return; }
-              if (task[number[priority]]->poll()) { highest_active_priority = last_priority; return; }
-            }
-          }
-        }
-        highest_active_priority = last_priority;
-      }
-    }
-  }
-#else
-  void Tasks::yield() {
-    for (uint8_t priority = 0; priority <= highest_priority; priority++) {
+void Tasks::yield() {
+  static uint8_t highest_priority_active = 8;
+  ::yield();
+  for (uint8_t priority = 0; priority <= highest_priority; priority++) {
+    uint8_t last_priority = highest_priority_active;
+    if (priority < highest_priority_active) {
+      highest_priority_active = priority;
       for (uint8_t i = 0; i <= highest_task; i++) {
         if (++number[priority] > highest_task) number[priority] = 0;
         if (allocated[number[priority]]) {
           if (task[number[priority]]->getPriority() == priority) {
-            if (task[number[priority]]->isDurationComplete()) { remove(number[priority] + 1); return; }
-            if (task[number[priority]]->poll()) return;
+            if (task[number[priority]]->isDurationComplete()) { remove(number[priority] + 1); highest_priority_active = last_priority; return; }
+            if (task[number[priority]]->poll()) { highest_priority_active = last_priority; return; }
           }
         }
       }
+      highest_priority_active = last_priority;
     }
   }
-#endif
+}
 
 void Tasks::yield(unsigned long milliseconds) {
   unsigned long endTime = millis() + milliseconds;
@@ -613,12 +611,38 @@ void Tasks::yieldMicros(unsigned long microseconds) {
   while ((long)(micros() - endTime) < 0) this->yield();
 }
 
+void Tasks::yieldAll() {
+  for (uint8_t priority = 0; priority <= highest_priority; priority++) {
+    for (uint8_t i = 0; i <= highest_task; i++) {
+      if (++number[priority] > highest_task) number[priority] = 0;
+      if (allocated[number[priority]]) {
+        if (task[number[priority]]->getPriority() == priority) {
+          if (task[number[priority]]->isDurationComplete()) { remove(number[priority] + 1); return; }
+          if (task[number[priority]]->poll()) return;
+        }
+      }
+    }
+  }
+}
+
+void Tasks::yieldAll(unsigned long milliseconds) {
+  unsigned long endTime = millis() + milliseconds;
+  while ((long)(millis() - endTime) < 0) this->yieldAll();
+}
+
+void Tasks::yieldAllMicros(unsigned long microseconds) {
+  unsigned long endTime = micros() + microseconds;
+  while ((long)(micros() - endTime) < 0) this->yieldAll();
+}
+
 void Tasks::updatePriorityRange() {
   // scan for highest priority
   highest_priority = 0;
   for (uint8_t e = 0; e <= highest_task; e++) {
-    uint8_t p = task[e]->getPriority();
-    if (p > highest_priority) highest_priority = p;
+    if (allocated[e]) {
+      uint8_t p = task[e]->getPriority();
+      if (p > highest_priority) highest_priority = p;
+    }
   }
 }
 

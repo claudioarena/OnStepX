@@ -10,7 +10,10 @@
 #include "../../../libApp/commands/ProcessCmds.h"
 #include "../../../lib/calendars/Calendars.h"
 #include "../../../lib/tls/Tls.h"
-#include "../../../lib/tls/PPS.h"
+
+#ifndef SITE_MIN_PPS_SUB_MICRO
+  #define SITE_MIN_PPS_SUB_MICRO 4
+#endif
 
 extern volatile unsigned long fracLAST;
 
@@ -29,9 +32,9 @@ typedef struct LocationExtras {
 #pragma pack(1)
 #define LocationSize 40
 typedef struct Location {
-  double latitude;
-  double longitude;
-  float  elevation;
+  double latitude;  // in radians
+  double longitude; // in radians
+  float  elevation; // in meters
   float  timezone;
   char   name[16];
 } Location;
@@ -41,7 +44,7 @@ class Site {
   public:
     void init();
     
-    bool command(char *reply, char *command, char *parameter, bool *supressFrame, bool *numericReply, CommandError *commandError);
+    bool command(char *reply, char *command, char *parameter, bool *suppressFrame, bool *numericReply, CommandError *commandError);
 
     // update/apply the site latitude and longitude, necessary for LAST calculations etc.
     void updateLocation();
@@ -74,9 +77,6 @@ class Site {
     // slower rates are < 1.0, faster rates are > 1.0
     inline float getSiderealRatio() { return (float)SIDEREAL_PERIOD/siderealPeriod; }
 
-    // callback to tick the fracsec sidereal frac
-    void tick();
-
     Location location;
     LocationExtras locationEx;
 
@@ -85,6 +85,14 @@ class Site {
 
     bool dateIsReady = false;
     bool timeIsReady = false;
+
+    #if TIME_LOCATION_SOURCE != OFF
+      TimeLocationSource *tls;
+    #endif
+
+    #if TIME_LOCATION_SOURCE_FALLBACK != OFF
+      TimeLocationSource *tlsFallback;
+    #endif
 
   private:
     // gets the time in hours that have passed since Julian Day was set (UT1)
@@ -140,6 +148,9 @@ class Site {
 
     // site number 0..3
     uint8_t locationNumber = 0;
+
+    // site nv keys
+    uint16_t nvKey[4];
 };
 
 extern Site site;

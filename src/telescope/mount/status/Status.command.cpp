@@ -5,9 +5,12 @@
 
 #if defined(MOUNT_PRESENT)
 
+#include "../../../lib/nv/Nv.h"
+
+#include "../../../lib/tls/PPS.h"
+
 #include "../Mount.h"
 #include "../coordinates/Transform.h"
-#include "../../../lib/tls/PPS.h"
 #include "../goto/Goto.h"
 #include "../guide/Guide.h"
 #include "../home/Home.h"
@@ -16,8 +19,8 @@
 #include "../limits/Limits.h"
 #include "../status/Status.h"
 
-bool Status::command(char *reply, char *command, char *parameter, bool *supressFrame, bool *numericReply, CommandError *commandError) {
-  UNUSED(supressFrame);
+bool Status::command(char *reply, char *command, char *parameter, bool *suppressFrame, bool *numericReply, CommandError *commandError) {
+  UNUSED(suppressFrame);
 
   if (command[0] == 'G') {
     // :Gm#       Gets the meridian pier-side
@@ -25,6 +28,7 @@ bool Status::command(char *reply, char *command, char *parameter, bool *supressF
     if (command[1] == 'm' && parameter[0] == 0)  {
       strcpy(reply, "?");
       Coordinate current = mount.getMountPosition(CR_MOUNT);
+      if (guide.state == GU_HOME_GUIDE || guide.state == GU_HOME_GUIDE_ABORT) current.pierSide = PIER_SIDE_NONE;
       if (current.pierSide == PIER_SIDE_NONE) reply[0]='N';
       if (current.pierSide == PIER_SIDE_EAST) reply[0]='E';
       if (current.pierSide == PIER_SIDE_WEST) reply[0]='W';
@@ -41,10 +45,11 @@ bool Status::command(char *reply, char *command, char *parameter, bool *supressF
       if (park.state == PS_PARKING)            reply[i++]='I'; else                // Parking [I]n-progress
       if (park.state == PS_PARKED)             reply[i++]='P'; else                // [P]arked
       if (park.state == PS_PARK_FAILED)        reply[i++]='F';                     // Park [F]ailed
-      if (mount.isSyncToEncoders())            reply[i++]='e';                     // Sync to [e]ncoders only
+      if (mount.syncFromOnStepToEncoders)      reply[i++]='e';                     // Sync to [e]ncoders only
       if (mount.isHome())                      reply[i++]='H';                     // At [H]ome
       if (home.state == HS_HOMING)             reply[i++]='h';                     // Slewing [h]ome
-      #if TIME_LOCATION_PPS_SENSE != OFF
+      if (home.settings.automaticAtBoot)       reply[i++]='B';                     // Auto home at [B]oot
+      #if (TIME_LOCATION_PPS_SENSE) != OFF
         if (pps.synced)                        reply[i++]='S';                     // PPS [S]ync
       #endif
       if (guide.activePulseGuide())            reply[i++]='G';                     // Pulse [G]uide active
@@ -67,14 +72,16 @@ bool Status::command(char *reply, char *command, char *parameter, bool *supressF
       if (goTo.isAutoFlipEnabled())            reply[i++]='a';                     // [a]uto meridian flip
       #if AXIS1_PEC == ON
         if (pec.settings.recorded)             reply[i++]='R';                     // PEC data has been [R]ecorded
-        if (transform.mountType != ALTAZM)
+        if (transform.isEquatorial())
           reply[i++]="/,~;^"[(int)pec.settings.state];                             // PEC State (/)gnore, ready (,)lay, (~)laying, ready (;)ecord, (^)ecording
       #endif
       if (transform.mountType == GEM)          reply[i++]='E'; else                // GEM
       if (transform.mountType == FORK)         reply[i++]='K'; else                // FORK
-      if (transform.mountType == ALTAZM)       reply[i++]='A';                     // ALTAZM
+      if (transform.mountType == ALTAZM)       reply[i++]='A'; else                // ALTAZM
+      if (transform.mountType == ALTALT)       reply[i++]='L';                     // ALTALT
 
       Coordinate current = mount.getMountPosition(CR_MOUNT);
+      if (guide.state == GU_HOME_GUIDE || guide.state == GU_HOME_GUIDE_ABORT) current.pierSide = PIER_SIDE_NONE;
       if (current.pierSide == PIER_SIDE_NONE)  reply[i++]='o'; else                // Pier side n[o]ne
       if (current.pierSide == PIER_SIDE_EAST)  reply[i++]='T'; else                // Pier side eas[T]
       if (current.pierSide == PIER_SIDE_WEST)  reply[i++]='W';                     // Pier side [W]est
@@ -82,7 +89,7 @@ bool Status::command(char *reply, char *command, char *parameter, bool *supressF
       reply[i++]='0' + guide.settings.pulseRateSelect;                             // Provide pulse-guide rate
       reply[i++]='0' + guide.settings.axis1RateSelect;                             // Provide guide rate
 
-      reply[i++]='0' + limits.errorCode();                                         // Provide general error code
+      reply[i++]='0' + mountStatus.errorCode();                                    // Provide general error code
       reply[i++]=0;
 
       *numericReply = false;
@@ -94,7 +101,7 @@ bool Status::command(char *reply, char *command, char *parameter, bool *supressF
       memset(reply, (char)0b10000000, 9);
       if (!mount.isTracking())                     reply[0]|=0b10000001;           // Not tracking
       if (goTo.state == GS_NONE)                   reply[0]|=0b10000010;           // No goto
-      #if TIME_LOCATION_PPS_SENSE != OFF
+      #if (TIME_LOCATION_PPS_SENSE) != OFF
         if (pps.synced)                            reply[0]|=0b10000100;           // PPS sync
       #endif
       if (guide.activePulseGuide())                reply[0]|=0b10001000;           // Pulse guide active
@@ -110,10 +117,12 @@ bool Status::command(char *reply, char *command, char *parameter, bool *supressF
         if (fequal(r, 60.136F))                    reply[1]|=0b10000011;           // King rate selected
       }
 
-      if (mount.isSyncToEncoders())                reply[1]|=0b10000100;           // Sync to encoders only
+      if (mount.syncFromOnStepToEncoders)          reply[1]|=0b10000100;           // Sync to encoders only
       if (guide.active())                          reply[1]|=0b10001000;           // Guide active
+      if (mountStatus.startupAuthorityTrusted())   reply[1]|=0b10010000;           // Startup authority trusted
       if (mount.isHome())                          reply[2]|=0b10000001;           // At home
-      if (home.state == HS_HOMING)                 reply[2]|=0b10100000;           // Slewing [h]ome
+      if (home.state == HS_HOMING)                 reply[2]|=0b10100000;           // Slewing home
+      if (home.settings.automaticAtBoot)           reply[2]|=0b11000000;           // Auto home at boot
       if (goTo.isHomePaused())                     reply[2]|=0b10000010;           // Waiting at home
       if (goTo.isHomePauseEnabled())               reply[2]|=0b10000100;           // Pause at home enabled?
       if (sound.enabled)                           reply[2]|=0b10001000;           // Buzzer enabled?
@@ -121,36 +130,70 @@ bool Status::command(char *reply, char *command, char *parameter, bool *supressF
 
       if (transform.mountType == GEM)              reply[3]|=0b10000001; else      // GEM
       if (transform.mountType == FORK)             reply[3]|=0b10000010; else      // FORK
-      if (transform.mountType == ALTAZM)           reply[3]|=0b10001000;           // ALTAZM
+      if (transform.mountType == ALTAZM)           reply[3]|=0b10001000; else      // ALTAZM
+      if (transform.mountType == ALTALT)           reply[3]|=0b10000100;           // ALTALT
 
       Coordinate current = mount.getMountPosition(CR_MOUNT);
+      if (guide.state == GU_HOME_GUIDE || guide.state == GU_HOME_GUIDE_ABORT) current.pierSide = PIER_SIDE_NONE;
       if (current.pierSide == PIER_SIDE_NONE)      reply[3]|=0b10010000; else      // Pier side none
       if (current.pierSide == PIER_SIDE_EAST)      reply[3]|=0b10100000; else      // Pier side east
       if (current.pierSide == PIER_SIDE_WEST)      reply[3]|=0b11000000;           // Pier side west
 
       #if AXIS1_PEC == ON
-        if (transform.mountType != ALTAZM)
+        if (transform.isEquatorial())
           reply[4] = (int)pec.settings.state|0b10000000;                           // PEC state: 0 ignore, 1 ready play, 2 playing, 3 ready record, 4 recording
         if (pec.settings.recorded)                 reply[4]|=0b11000000;           // PEC state: data has been recorded
       #endif
       reply[5] = (int)park.state|0b10000000;                                       // Park state: 0 not parked, 1 parking in-progress, 2 parked, 3 park failed
       reply[6] = (int)guide.settings.pulseRateSelect|0b10000000;                   // Pulse-guide selection
       reply[7] = (int)guide.settings.axis1RateSelect|0b10000000;                   // Guide selection
-      reply[8] = limits.errorCode()|0b10000000;                                    // General error
+      reply[8] = mountStatus.errorCode()|0b10000000;                               // General error
       reply[9] = 0;
       *numericReply = false;
+    } else
+
+    // :GW#       Get tracking and basic mount state
+    //            Returns: s#
+    if (command[1] == 'W' && parameter[0] == 0)  {
+      int i = 0;
+      if (transform.mountType == GEM)          reply[i++] = 'G'; else
+      if (transform.mountType == FORK)         reply[i++] = 'P'; else
+      if (transform.mountType == ALTAZM)       reply[i++] = 'A'; else
+      if (transform.mountType == ALTALT)       reply[i++] = 'L';
+      if (mount.isTracking())                  reply[i++] = 'T'; else reply[i++] = 'N';
+      if (park.state == PS_PARKED)             reply[i++] = 'P'; else
+      if (mount.isHome())                      reply[i++] = 'H'; else
+      if (goTo.alignDone())                    reply[i++] = '1'; else reply[i++] = '0';
+      reply[i++] = 0;
+      *numericReply = false;
     } else return false;
+
   } else
 
   // :SX97,[n]#     Set buzzer state
   //                Return: see below
   if (command[0] == 'S' && command[1] == 'X' && parameter[0] == '9' && parameter[1] == '7'  && parameter[2] == ','  && parameter[4] == 0) {
-    if (parameter[3] == '0' || parameter[3] == '1') {
-      sound.enabled = parameter[3] - '0';
-      #if STATUS_BUZZER_MEMORY == ON
-        nv.write(NV_MOUNT_STATUS_BASE, (uint8_t)sound.enabled);
-      #endif
-    } else *commandError = CE_PARAM_RANGE;
+    switch (parameter[3]) {
+      case '0': case '1':
+        sound.enabled = parameter[3] - '0';
+        #if STATUS_BUZZER_MEMORY == ON
+          settings.soundEnabled = sound.enabled;
+          nv().kv().put("STATUS_SETTINGS", settings);
+        #endif
+      break;
+      case '2':
+        soundBeep();
+      break;
+      case '3':
+        soundAlert();
+      break;
+      case '4':
+        soundClick();
+      break;
+      default:
+        *commandError = CE_PARAM_RANGE;
+      break;
+    }
   } else return false;
 
   return true;

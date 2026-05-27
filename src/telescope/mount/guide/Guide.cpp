@@ -5,8 +5,10 @@
 
 #ifdef MOUNT_PRESENT
 
-#include "../../../libApp/commands/ProcessCmds.h"
 #include "../../../lib/tasks/OnTask.h"
+#include "../../../lib/nv/Nv.h"
+
+#include "../../../libApp/commands/ProcessCmds.h"
 
 #include "../../Telescope.h"
 #include "../Mount.h"
@@ -20,21 +22,13 @@
 inline void guideWrapper() { guide.poll(); }
 
 void Guide::init() {
-  // confirm the data structure size
-  if (GuideSettingsSize < sizeof(GuideSettings)) { nv.initError = true; DL("ERR: Guide::init(), GuideSettingsSize error"); }
 
-  // write the default settings to NV
-  if (!nv.hasValidKey()) {
-    VLF("MSG: Mount, guide writing defaults to NV");
-    nv.writeBytes(NV_MOUNT_GUIDE_BASE, &settings, sizeof(GuideSettings));
-  }
+  nvKey = nv().kv().computeKey("GUIDE_SETTINGS");
+  if (!nv().kv().getOrInit(nvKey, settings.pulseRateSelect)) { DLF("WRN: Nv, init failed for GUIDE_SETTINGS"); }
 
-  // read the settings
-  nv.readBytes(NV_MOUNT_GUIDE_BASE, &settings, sizeof(GuideSettings));
-
-  // reset default guide rate to 20X, value stored in NV isn't used
   settings.axis1RateSelect = GR_20X;
   settings.axis2RateSelect = GR_20X;
+  settings.pulseRateSelect = constrain(settings.pulseRateSelect, GR_QUARTER, GR_1X);
 
   // start guide monitor task
   VF("MSG: Mount, start guide monitor task (rate "); V(FRACTIONAL_SEC_US/2); VF("us priority 3)... ");
@@ -45,7 +39,7 @@ void Guide::init() {
 
 // start guide at a given direction and rate on Axis1
 CommandError Guide::startAxis1(GuideAction guideAction, GuideRateSelect rateSelect, unsigned long guideTimeLimit) {
-  if (guideAction == GA_NONE || guideActionAxis1 == guideAction) return CE_NONE;
+  if (guideAction == GA_NONE) return CE_NONE;
   if (state == GU_HOME_GUIDE || state == GU_HOME_GUIDE_ABORT) return CE_NONE;
 
   CommandError e = validate(1, guideAction);
@@ -62,7 +56,8 @@ CommandError Guide::startAxis1(GuideAction guideAction, GuideRateSelect rateSele
     axis1.setPowerDownOverrideTime(300000UL);
     axis2.setPowerDownOverrideTime(300000UL);
   }
-  if (rate <= 2 && rateSelect != GR_CUSTOM) {
+
+  if (limits.isEnabled() && rate <= 2 && rateSelect != GR_CUSTOM) {
     backlashEnableControl(false);
     state = GU_PULSE_GUIDE;
     if (guideAction == GA_REVERSE) { VF("MSG: Guide, Axis1 rev @"); rateAxis1 = -rate; } else { VF("MSG: Guide, Axis1 fwd @"); rateAxis1 = rate; }
@@ -102,7 +97,7 @@ void Guide::stopAxis1(GuideAction stopDirection, bool abort) {
 
 // start guide at a given direction and rate on Axis2
 CommandError Guide::startAxis2(GuideAction guideAction, GuideRateSelect rateSelect, unsigned long guideTimeLimit) {
-  if (guideAction == GA_NONE || guideActionAxis2 == guideAction) return CE_NONE;
+  if (guideAction == GA_NONE) return CE_NONE;
   if (state == GU_HOME_GUIDE || state == GU_HOME_GUIDE_ABORT) return CE_NONE;
 
   CommandError e = validate(2, guideAction); // if successful always sets pierSide
@@ -121,7 +116,8 @@ CommandError Guide::startAxis2(GuideAction guideAction, GuideRateSelect rateSele
     axis1.setPowerDownOverrideTime(300000UL);
     axis2.setPowerDownOverrideTime(300000UL);
   }
-  if (rate <= 2 && rateSelect != GR_CUSTOM) {
+
+  if (limits.isEnabled() && rate <= 2 && rateSelect != GR_CUSTOM) {
     state = GU_PULSE_GUIDE;
     backlashEnableControl(false);
     if (pierSide == PIER_SIDE_WEST) { if (guideAction == GA_FORWARD) guideAction = GA_REVERSE; else guideAction = GA_FORWARD; };
@@ -199,10 +195,10 @@ CommandError Guide::startHome() {
     backlashEnableControl(true);
 
     // use guiding and switches to find home
-    mountStatus.sound.alert();
+    mountStatus.soundAlert();
     state = GU_HOME_GUIDE;
 
-    #if AXIS2_TANGENT_ARM == OFF
+    #if AXIS1_SECTOR_GEAR == ON || AXIS2_TANGENT_ARM == OFF
       guideFinishTimeAxis1 = millis() + (unsigned long)(GUIDE_HOME_TIME_LIMIT * 1000.0);
       guideActionAxis1 = GA_HOME;
       axis1.setFrequencySlew(goTo.rate);
@@ -213,6 +209,9 @@ CommandError Guide::startHome() {
     guideActionAxis2 = GA_HOME;
     axis2.setFrequencySlew(goTo.rate*((float)(AXIS2_SLEW_RATE_PERCENT)/100.0F));
     axis2.autoSlewHome();
+  #else
+    DLF("WRN: Mount, sensed home rejected because goto is disabled");
+    return CE_SLEW_ERR_UNSPECIFIED;
   #endif
   return CE_NONE;
 }
@@ -272,17 +271,26 @@ bool Guide::validAxis1(GuideAction guideAction) {
 
   if (!limits.isEnabled()) return true;
 
-  double a1;
-  if (transform.mountType == ALTAZM) a1 = location.z; else a1 = location.h;
+  #if AXIS1_SECTOR_GEAR == ON
+    location.a1 = axis1.getMotorPosition();
+  #endif
+
+  // for Fork and Alt/Azm mounts limits are based on shaft angles
+  // so convert axis1 into normal PIER_SIDE_EAST coordinates
+  if (transform.mountType != GEM && location.pierSide == PIER_SIDE_WEST) location.a1 += Deg180;
 
   if (guideAction == GA_REVERSE || guideAction == GA_SPIRAL) {
-    if (transform.meridianFlips && location.pierSide == PIER_SIDE_EAST) { if (location.h < -limits.settings.pastMeridianE) return false; }
-    if (a1 < axis1.settings.limits.min) return false;
+    if (transform.mountType == GEM && location.pierSide == PIER_SIDE_EAST) {
+      if (location.h < -limits.settings.pastMeridianE) return false;
+    }
+    if (location.a1 < axis1.getLimitMin()) return false;
   }
 
   if (guideAction == GA_FORWARD || guideAction == GA_SPIRAL) {
-    if (transform.meridianFlips && location.pierSide == PIER_SIDE_WEST) { if (location.h > limits.settings.pastMeridianW) return false; }
-    if (a1 > axis1.settings.limits.max) return false;
+    if (transform.mountType == GEM && location.pierSide == PIER_SIDE_WEST) {
+      if (location.h > limits.settings.pastMeridianW) return false;
+    }
+    if (location.a1 > axis1.getLimitMax()) return false;
   }
   return true;
 }
@@ -300,17 +308,17 @@ bool Guide::validAxis2(GuideAction guideAction) {
 
   if (guideAction == GA_REVERSE || guideAction == GA_SPIRAL) {
     if (pierSide == PIER_SIDE_WEST) {
-      if (location.a2 > axis2.settings.limits.max) return false;
+      if (fgt(location.a2, axis2.getLimitMax())) return false;
     } else {
-      if (location.a2 < axis2.settings.limits.min) return false;
+      if (flt(location.a2, axis2.getLimitMin())) return false;
     }
   }
 
   if (guideAction == GA_FORWARD || guideAction == GA_SPIRAL) {
     if (pierSide == PIER_SIDE_WEST) {
-      if (location.a2 < axis2.settings.limits.min) return false;
+      if (flt(location.a2, axis2.getLimitMin())) return false;
     } else {
-      if (location.a2 > axis2.settings.limits.max) return false;
+      if (fgt(location.a2, axis2.getLimitMax())) return false;
     }
   }
   if (guideAction == GA_SPIRAL) {
@@ -321,13 +329,16 @@ bool Guide::validAxis2(GuideAction guideAction) {
 
 // general validation of guide request
 CommandError Guide::validate(int axis, GuideAction guideAction) {
-  if (!mount.isEnabled()) return CE_SLEW_ERR_IN_STANDBY;
-  if (mount.isFault()) return CE_SLEW_ERR_HARDWARE_FAULT;
+  if (!mount.isEnabled()) {
+    mount.enable(true);
+    if (!mount.isEnabled()) return CE_SLEW_ERR_IN_STANDBY;
+  }
+
   if ((guideAction == GA_SPIRAL || guideAction == GA_HOME) && mount.isSlewing()) return CE_SLEW_IN_MOTION;
 
   #if GOTO_FEATURE == ON
     if (park.state == PS_PARKED) return CE_SLEW_ERR_IN_PARK;
-    if (goTo.state != GS_NONE) { goTo.stop(); return CE_SLEW_IN_MOTION; }
+    if (goTo.state != GS_NONE) { goTo.abort(); return CE_SLEW_IN_MOTION; }
   #endif
 
   if (axis == 1 || guideAction == GA_SPIRAL) {
@@ -344,21 +355,26 @@ CommandError Guide::validate(int axis, GuideAction guideAction) {
     }
   }
 
+  if (mount.motorFault()) return CE_SLEW_ERR_HARDWARE_FAULT;
+
   return CE_NONE;
 }
 
 // start axis1 movement
 void Guide::axis1AutoSlew(GuideAction guideAction) {
-  if (guideAction == GA_REVERSE) axis1.autoSlew(DIR_REVERSE); else axis1.autoSlew(DIR_FORWARD);
+  if (guideAction == GA_REVERSE) axis1.autoSlew(DIR_REVERSE); else
+    if (guideAction == GA_FORWARD) axis1.autoSlew(DIR_FORWARD);
 }
 
 // start axis2 movement
 void Guide::axis2AutoSlew(GuideAction guideAction) {
   Coordinate location = mount.getMountPosition(CR_MOUNT);
   if (location.pierSide == PIER_SIDE_WEST) {
-    if (guideAction == GA_REVERSE) axis2.autoSlew(DIR_FORWARD); else axis2.autoSlew(DIR_REVERSE);
+    if (guideAction == GA_REVERSE) axis2.autoSlew(DIR_FORWARD); else
+      if (guideAction == GA_FORWARD) axis2.autoSlew(DIR_REVERSE);
   } else {
-    if (guideAction == GA_REVERSE) axis2.autoSlew(DIR_REVERSE); else axis2.autoSlew(DIR_FORWARD);
+    if (guideAction == GA_REVERSE) axis2.autoSlew(DIR_REVERSE); else
+      if (guideAction == GA_FORWARD) axis2.autoSlew(DIR_FORWARD);
   }
 }
 
@@ -437,13 +453,15 @@ void Guide::poll() {
   if ((state == GU_HOME_GUIDE || state == GU_HOME_GUIDE_ABORT) && !mount.isSlewing()) {
     guideActionAxis1 = GA_NONE;
     guideActionAxis2 = GA_NONE;
-    mountStatus.sound.alert();
+    mountStatus.soundAlert();
     if (state == GU_HOME_GUIDE) {
       VLF("MSG: Guide, arrival at home detected");
-      #if AXIS2_TANGENT_ARM == OFF
-        state = GU_NONE;
-        home.reset(home.isRequestWithReset);
-      #endif
+      state = GU_NONE;
+      home.guideDone(true);
+    } else {
+      VLF("MSG: Guide, aborted homing");
+      state = GU_NONE;
+      home.guideDone(false);
     }
   }
 
@@ -452,10 +470,12 @@ void Guide::poll() {
 }
 
 // enables or disables backlash for the GUIDE_DISABLE_BACKLASH option
-void Guide::backlashEnableControl(bool enabled) {
+void Guide::backlashEnableControl(bool enable) {
   #if GUIDE_DISABLE_BACKLASH == ON
-    axis1.setBacklash(state ? mount.settings.backlash.axis1 : 0.0F);
-    axis2.setBacklash(state ? mount.settings.backlash.axis2 : 0.0F);
+    axis1.setBacklash(enable ? mount.settings.backlash.axis1 : 0.0F);
+    axis2.setBacklash(enable ? mount.settings.backlash.axis2 : 0.0F);
+  #else
+    UNUSED(enable);
   #endif
 }
 

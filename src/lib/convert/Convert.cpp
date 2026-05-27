@@ -4,12 +4,11 @@
 #include "../../Common.h"
 #include "Convert.h"
 
-void strncpyex(char *result, const char *source, size_t length) {
-  strncpy(result, source, length);
-  result[length - 1] = 0;
-}
-
-#if defined(ARDUINO_ARDUINO_NANO33BLE) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_MBED_RP2040) || defined(ARDUINO_ARCH_RP2040)
+#if defined(ARDUINO_ARDUINO_NANO33BLE) || \
+    defined(__TEENSYDUINO__) || \
+    defined(ARDUINO_ARCH_SAMD) || \
+    defined(ARDUINO_ARCH_MBED_RP2040) || \
+    defined(ARDUINO_ARCH_RP2040)
   void sprintF(char *result, const char *source, double f) {
     sprintf(result, source, f);
   }
@@ -52,15 +51,18 @@ bool Convert::tzToDouble(double *value, char *hm) {
 
   if (strlen(hm) < 1 || strlen(hm) > 6) return false;
 
+  // if there's a decimal part just convert it and return
+  if (strchr(hm, '.') != NULL) { return atof2(hm, value); }
+
   // determine if the sign was used, skip any '+'
   if (hm[0] == '-') { sign = -1; hm++; } else if (hm[0] == '+') hm++;
 
   // if there's a minute part convert it and mark the end of the hours string
-  char* m = strchr(hm,':');
+  char* m = strchr(hm, ':');
   if (m != NULL) {
     m[0] = 0;
     m++;
-    if (strlen(m) != 2) return false;
+    if (strlen(m) != 1 && strlen(m) != 2) return false;
     if (!atoi2(m, &minute, false)) return false;
     // only these exact minutes are allowed for time zones
     if (minute != 45 && minute != 30 && minute != 0) return false;
@@ -193,7 +195,7 @@ void Convert::doubleToHms(char *reply, double value, bool signPresent, Precision
 
   // setup formatting, handle adding the sign
   if (signPresent) {
-    if (value < 0) { value = -value; strcpy(sign,"-"); } else strcpy(sign,"+");
+    if (value < 0) { value = -value; strcpy(sign, "-"); } else strcpy(sign, "+");
   }
   
   // round to 0.00005 second or 0.5 second, depending on precision mode
@@ -229,7 +231,7 @@ void Convert::doubleToDms(char *reply, double value, bool fullRange, bool signPr
 
   // setup formatting, handle adding the sign
   if (signPresent) {
-    if (value < 0) { value = -value; strcpy(sign,"-"); } else strcpy(sign,"+");
+    if (value < 0) { value = -value; strcpy(sign, "-"); } else strcpy(sign, "+");
   }
 
   // round to 0.0005 arc-second or 0.5 arc-second, depending on precision mode
@@ -273,7 +275,7 @@ bool Convert::atoi2(char *a, uint8_t *u, bool sign) {
 bool Convert::atof2(char *a, double *d, bool sign) {
   int16_t dc = 0;
   int16_t len = strlen(a);
-  for (int l=0; l < len; l++) {
+  for (int l = 0; l < len; l++) {
     if (l == 0 && (a[l] == '+' || a[l] == '-') && sign) continue;
     if (a[l] == '.') { if (dc == 0) { dc++; continue; } else return false; }
     if (a[l] < '0' || a[l] > '9') return false;
@@ -281,5 +283,57 @@ bool Convert::atof2(char *a, double *d, bool sign) {
   *d = atof(a);
   return true;
 }
+
+void Convert::stripNumericStr(char* s, bool trailingDecimal) {
+  int pp = -1;
+  for (unsigned int p = 0; p < strlen(s); p++) if (s[p] == '.') { pp = p; break; }
+  if (pp != -1) {
+    int p;
+    for (p = strlen(s) - 1; p >= pp; p--) {
+      if (trailingDecimal && p - 1 > 0 && s[p] == '0' && s[p - 1] == '.') break;
+      if (s[p] != '0') break;
+      s[p] = 0;
+    }
+    if (s[p] == '.') s[p] = 0;
+  }
+  if (s[0] == '-' || s[0] == '+') {
+    while (s[1] == '0' && s[2] != '.' && strlen(s) > 2) memmove(&s[1], &s[2], strlen(s) - 1);
+  } else {
+    while (s[0] == '0' && s[1] != '.' && strlen(s) > 1) memmove(&s[0], &s[1], strlen(s));
+  }
+}
+
+uint8_t Convert::packSeconds(float t) {
+  float f = 10.0F;                             // default is 1 second
+  if (t <= 0.0162F) f = 0.0F; else             // 0.0156 (1/64 second)        (0)
+  if (t <= 0.0313F) f = 1.0F; else             // 0.0313 (1/32 second)        (1)
+  if (t <= 0.0625F) f = 2.0F; else             // 0.0625 (1/16 second)        (2)
+  if (t <= 1.0F) f = 2.0F + t*8.0F; else       // 0.125 seconds to 1 seconds  (2 to 10)
+  if (t <= 10.0F) f = 6.0F + t*4.0F; else      // 0.25 seconds to 10 seconds  (10 to 46)
+  if (t <= 30.0F) f = 26.0F + t*2.0F; else     // 0.5 seconds to 30 seconds   (46 to 86)
+  if (t <= 120.0F) f = 56.0F + t; else         // 1 second to 120 seconds     (86 to 176)
+  if (t <= 600.0F) f = 168.0F + t/15.0F; else  // 15 seconds to 300 seconds   (176 to 208)
+  if (t <= 3360.0F) f = 198.0F + t/60.0F; else // 1 minute to 56 minutes      (208 to 254)
+  if (t <= 3600.0F) f = 255.0F;                // 1 hour                      (255)
+  if (f < 0.0F) f = 0.0F;
+  if (f > 255.0F) f = 255.0F;
+  return lroundf(f);
+}
+
+float Convert::unpackSeconds(uint8_t b) {
+  float f = 1.0;                               // default is 1 second
+  if (b == 0) f = 0.016125F; else              // 0.0156 (1/64 second)        (0)
+  if (b == 1) f = 0.03125F; else               // 0.0313 (1/32 second)        (1)
+  if (b == 2) f = 0.0625F; else                // 0.0625 (1/16 second)        (2)
+  if (b <= 10) f = (b - 2.0F)/8.0F; else       // 0.125 seconds to 1 seconds  (2 to 10)
+  if (b <= 46) f = (b - 6.0F)/4.0F; else       // 0.25 seconds to 10 seconds  (10 to 46)
+  if (b <= 86) f = (b - 26.0F)/2.0F; else      // 0.5 seconds to 30 seconds   (46 to 86)
+  if (b <= 176) f = (b - 56.0F); else          // 1 second to 120 seconds     (86 to 176)
+  if (b <= 208) f = (b - 168.0F)*15.0F; else   // 15 seconds to 300 seconds   (176 to 208)
+  if (b <= 254) f = (b - 198.0F)*60.0F; else   // 1 minute to 56 minutes      (208 to 254)
+  if (b == 255) f = 3600.0F;                   // 1 hour                      (255)
+  return f;
+}
+
 
 Convert convert;
