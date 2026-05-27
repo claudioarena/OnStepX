@@ -45,6 +45,8 @@
 #ifndef ADDON_RESET_PIN
 #define ADDON_RESET_PIN       GPIO_PIN(15)       // ESP8266 RST
 #endif
+#define PARK_SIGNAL_PIN       GPIO_PIN(0)
+#define PARK_STATUS_PIN       GPIO_PIN(1)
 
 // The status LED is a two wire jumper with a 10k resistor in series to limit the current to the LED
 #ifndef STATUS_LED_PIN

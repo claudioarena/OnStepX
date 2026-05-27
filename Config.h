@@ -198,8 +198,8 @@
 
 // PARKING ---------------------------------------------------- see https://onstep.groups.io/g/main/wiki/Configuration_Mount#PARKING
 #define PARK_SENSE                    OFF //    OFF, HIGH or LOW state indicates mount is in the park orientation.            Option
-#define PARK_SIGNAL                   OFF //    OFF, HIGH or LOW state park input signal triggers parking.                    Option
-#define PARK_STATUS                   OFF //    OFF, signals with a HIGH or LOW state when successfully parked.               Option 
+#define PARK_SIGNAL                   LOW //    OFF, HIGH or LOW state park input signal triggers parking.                    Option
+#define PARK_STATUS                   LOW //    OFF, signals with a HIGH or LOW state when successfully parked.               Option 
 
 
 // PEC ------------------------------------------------------------ see https://onstep.groups.io/g/main/wiki/Configuration_Mount#PEC
