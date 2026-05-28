@@ -11,3 +11,4 @@ esp32.svd
 src/plugins/*
 debug.svd
 z.*
+lib/*
