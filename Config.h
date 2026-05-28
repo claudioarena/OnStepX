@@ -161,17 +161,15 @@
 #define MOUNT_COORDS_MEMORY           OFF //    OFF, ON Remembers approximate mount coordinates across power cycles.          Option
                                           //         Requires FRAM NV memory and the mount must not move while powered down.
 
-#define MOUNT_ENABLE_IN_STANDBY       OFF //    OFF, ON Enables mount motor drivers while in standby.                         Infreq
+#define MOUNT_ENABLE_IN_STANDBY        ON //    OFF, ON Enables mount motor drivers while in standby.                         Infreq
 
 // TIME AND LOCATION ---------------------------------------------- see https://onstep.groups.io/g/main/wiki/Configuration_Mount#TLS
-
-#define TIME_LOCATION_SOURCE          DS3231 //    OFF, DS3231 (I2C,) SD3031 (I2C,) TEENSY (T3.2 etc,) GPS, or NTP source.       Option
+#define TIME_LOCATION_SOURCE       DS3231 //    OFF, DS3231 (I2C,) SD3031 (I2C,) TEENSY (T3.2 etc,) GPS, or NTP source.       Option
                                           //         Provides Date/Time, and if available, PPS & Lat/Long also.
 #define TIME_LOCATION_PPS_SENSE      HIGH //    OFF, HIGH senses PPS (pulse per second,) signal rising edge, or use LOW for   Option
                                           //         falling edge, or use BOTH for rising and falling edges.
 
 // STATUS ------------------------------------------------------ see https://onstep.groups.io/g/main/wiki/Configuration_Mount#STATUS
-
 #define STATUS_MOUNT_LED              ON  //    OFF, ON Flashes proportional to rate of movement or solid on for slews.       Option
 #define STATUS_BUZZER                 ON  //    OFF, ON, n. Where n=100..6000 (Hz freq.) for speaker. ON for piezo buzzer.    Option
 #define STATUS_BUZZER_DEFAULT         ON  //    OFF, ON starts w/buzzer sound enabled.                                        Option
@@ -200,7 +198,6 @@
 #define PARK_SENSE                    OFF //    OFF, HIGH or LOW state indicates mount is in the park orientation.            Option
 #define PARK_SIGNAL                   LOW //    OFF, HIGH or LOW state park input signal triggers parking.                    Option
 #define PARK_STATUS                   LOW //    OFF, signals with a HIGH or LOW state when successfully parked.               Option 
-
 
 // PEC ------------------------------------------------------------ see https://onstep.groups.io/g/main/wiki/Configuration_Mount#PEC
 #define PEC_STEPS_PER_WORM_ROTATION 51200 //      0, n. Steps per worm rotation (0 disables else 720 sec buffer allocated.)  <-Req'd
